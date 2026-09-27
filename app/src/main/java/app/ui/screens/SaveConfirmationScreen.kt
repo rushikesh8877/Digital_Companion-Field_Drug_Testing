@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.data.DemoTestViewModel
 
+import androidx.compose.ui.graphics.Color
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SaveConfirmationScreen(
@@ -22,6 +24,7 @@ fun SaveConfirmationScreen(
 ) {
     val record by viewModel.currentRecord.collectAsState()
     val saved by viewModel.saved.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
 
     Scaffold(
         topBar = {
@@ -104,7 +107,7 @@ fun SaveConfirmationScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        containerColor = if (isOnline) MaterialTheme.colorScheme.secondaryContainer else Color(0xFFFFF3E0),
                     ),
                 ) {
                     Row(
@@ -112,18 +115,19 @@ fun SaveConfirmationScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text("✅", fontSize = 28.sp)
+                        Text(if (isOnline) "☁️" else "📱", fontSize = 28.sp)
                         Column {
                             Text(
-                                "Record Saved to Local Database",
+                                if (isOnline) "Saved & Synced to Cloud" else "Saved to Local Database (Offline)",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                color = if (isOnline) MaterialTheme.colorScheme.onSecondaryContainer else Color(0xFFE65100),
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                "The tamper-proof forensic record is permanently archived offline.",
+                                if (isOnline) "Tamper-proof record archived locally in Room and synced to Firebase Cloud. Visible to all officers."
+                                else "Record safely stored in offline database. It will sync to Firebase Cloud automatically as soon as internet connects.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                color = if (isOnline) MaterialTheme.colorScheme.onSecondaryContainer else Color(0xFF5D4037),
                             )
                         }
                     }

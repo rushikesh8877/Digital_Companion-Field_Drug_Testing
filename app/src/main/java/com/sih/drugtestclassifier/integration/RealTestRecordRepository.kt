@@ -46,17 +46,23 @@ import java.io.File
  *    hash/signature checks, so a tampered record is genuinely detected
  *    rather than simulated.
  */
-class RealTestRecordRepository(private val context: Context) : TestRecordRepository {
+class RealTestRecordRepository(
+    private val context: Context,
+    private val syncManager: com.sih.drugtestclassifier.sync.FirebaseSyncManager = com.sih.drugtestclassifier.sync.FirebaseSyncManager.getInstance(context),
+) : TestRecordRepository {
 
     private val kit: KitProfile by lazy { KitProfileLoader.loadDefault(context.assets) }
     private val pipeline: ClassificationPipeline by lazy { ClassificationPipeline(kit = kit) }
     private val dbRepository = TestRepository(DatabaseProvider.getDatabase(context).testDao())
 
-    // Room's DAO is suspend-only; the TestRecordRepository contract's getRecords() isn't.
-    // Load once up front and refresh the cache after every write, rather than blocking on
-    // every single read.
     @Volatile
     private var cachedRecords: List<DigitalTestRecord> = runBlocking { dbRepository.getAllTests() }
+
+    init {
+        syncManager.setDataChangedListener {
+            cachedRecords = runBlocking { dbRepository.getAllTests() }
+        }
+    }
 
     override fun getRecords(): List<DigitalTestRecord> = cachedRecords.sortedByDescending { it.timestamp }
 
@@ -113,6 +119,7 @@ class RealTestRecordRepository(private val context: Context) : TestRecordReposit
     override fun saveRecord(record: DigitalTestRecord) = runBlocking {
         dbRepository.addTest(record)
         cachedRecords = dbRepository.getAllTests()
+        syncManager.onRecordSavedLocally(record)
     }
 
     override fun verify(record: DigitalTestRecord): Boolean = verifyDetailed(record).allPassed

@@ -2,18 +2,21 @@ package app.ui.data
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sih.drugtestclassifier.auth.FirebaseAuthManager
+import com.sih.drugtestclassifier.auth.OfficerDepartmentVerifier
 import com.sih.drugtestclassifier.location.LocationHelper
 import com.sih.drugtestclassifier.models.ClassificationResult
 import com.sih.drugtestclassifier.models.DigitalTestRecord
 import com.sih.drugtestclassifier.models.TestImage
 import com.sih.drugtestclassifier.security.VerificationResult
+import com.sih.drugtestclassifier.sync.FirebaseSyncManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class DemoTestViewModel(
-    private val repository: TestRecordRepository = FakeTestRecordRepository()
+    private val repository: TestRecordRepository = FakeTestRecordRepository(),
 ) : ViewModel() {
 
     // --- Officer Authentication Session ---
@@ -28,6 +31,10 @@ class DemoTestViewModel(
 
     private val _department = MutableStateFlow("Narcotics Enforcement Unit - Nashik")
     val department: StateFlow<String> = _department.asStateFlow()
+
+    // --- Officer ID & Department Uniqueness Verification ---
+    private val _officerVerificationReport = MutableStateFlow<OfficerDepartmentVerifier.OfficerVerificationReport?>(null)
+    val officerVerificationReport: StateFlow<OfficerDepartmentVerifier.OfficerVerificationReport?> = _officerVerificationReport.asStateFlow()
 
     // --- Active Test Pipeline State ---
     private val _image = MutableStateFlow<TestImage?>(null)
@@ -57,10 +64,48 @@ class DemoTestViewModel(
     private val _verificationDetail = MutableStateFlow<VerificationResult?>(null)
     val verificationDetail: StateFlow<VerificationResult?> = _verificationDetail.asStateFlow()
 
-    // --- Authentication Actions ---
-    private var authManager: com.sih.drugtestclassifier.auth.FirebaseAuthManager? = null
+    // --- Cloud Sync Pipeline ---
+    private var syncManager: FirebaseSyncManager? = null
 
-    fun attachAuthManager(manager: com.sih.drugtestclassifier.auth.FirebaseAuthManager) {
+    private val _isOnline = MutableStateFlow(true)
+    val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _pendingSyncCount = MutableStateFlow(0)
+    val pendingSyncCount: StateFlow<Int> = _pendingSyncCount.asStateFlow()
+
+    fun attachSyncManager(manager: FirebaseSyncManager) {
+        this.syncManager = manager
+        manager.setDataChangedListener {
+            refreshRecords()
+        }
+        viewModelScope.launch {
+            manager.isOnline.collect { _isOnline.value = it }
+        }
+        viewModelScope.launch {
+            manager.isSyncing.collect { _isSyncing.value = it }
+        }
+        viewModelScope.launch {
+            manager.pendingSyncCount.collect { _pendingSyncCount.value = it }
+        }
+        manager.startRealtimeSync()
+        viewModelScope.launch {
+            manager.triggerSync()
+            refreshRecords()
+        }
+    }
+
+    fun syncNow() = viewModelScope.launch {
+        syncManager?.triggerSync()
+        refreshRecords()
+    }
+
+    // --- Authentication Actions ---
+    private var authManager: FirebaseAuthManager? = null
+
+    fun attachAuthManager(manager: FirebaseAuthManager) {
         this.authManager = manager
         manager.getCurrentOfficer()?.let { profile ->
             _officerId.value = profile.badgeId
@@ -70,10 +115,43 @@ class DemoTestViewModel(
         }
     }
 
-    suspend fun firebaseSignIn(email: String, pass: String): com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult {
-        val manager = authManager ?: return com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
+    suspend fun checkOfficerIdAvailability(
+        dept: String,
+        id: String,
+    ): OfficerDepartmentVerifier.GrantValidationResult {
+        val manager = authManager ?: return OfficerDepartmentVerifier.GrantValidationResult.Granted()
+        return manager.checkOfficerIdAvailability(dept, id)
+    }
+
+    suspend fun runOfficerVerification(): OfficerDepartmentVerifier.OfficerVerificationReport {
+        val manager = authManager
+        val report = if (manager != null) {
+            manager.verifyAllOfficers()
+        } else {
+            OfficerDepartmentVerifier.verifyOfficerUniqueness(
+                listOf(
+                    OfficerDepartmentVerifier.OfficerRecord(
+                        uid = "current-session",
+                        email = "officer@narcotics.gov.in",
+                        badgeId = _officerId.value,
+                        name = _officerName.value,
+                        department = _department.value,
+                    ),
+                ),
+            )
+        }
+        _officerVerificationReport.value = report
+        return report
+    }
+
+    fun clearOfficerVerificationReport() {
+        _officerVerificationReport.value = null
+    }
+
+    suspend fun firebaseSignIn(email: String, pass: String): FirebaseAuthManager.AuthResult {
+        val manager = authManager ?: return FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
         val result = manager.signIn(email, pass)
-        if (result is com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Success) {
+        if (result is FirebaseAuthManager.AuthResult.Success) {
             _officerId.value = result.profile.badgeId
             _officerName.value = result.profile.name
             _department.value = result.profile.department
@@ -87,11 +165,11 @@ class DemoTestViewModel(
         pass: String,
         badgeId: String,
         name: String,
-        dept: String
-    ): com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult {
-        val manager = authManager ?: return com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
+        dept: String,
+    ): FirebaseAuthManager.AuthResult {
+        val manager = authManager ?: return FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
         val result = manager.register(email, pass, badgeId, name, dept)
-        if (result is com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Success) {
+        if (result is FirebaseAuthManager.AuthResult.Success) {
             _officerId.value = result.profile.badgeId
             _officerName.value = result.profile.name
             _department.value = result.profile.department
@@ -105,10 +183,16 @@ class DemoTestViewModel(
         return manager.resetPassword(email)
     }
 
-    fun login(id: String, name: String, pin: String): Boolean {
+    fun login(
+        id: String,
+        name: String,
+        pin: String,
+        department: String = "Narcotics Enforcement Unit - Nashik",
+    ): Boolean {
         if (id.isBlank() || pin.length < 4) return false
         _officerId.value = id.trim()
         _officerName.value = name.trim().ifBlank { "Officer ${id.trim()}" }
+        _department.value = department.trim().ifBlank { "Narcotics Enforcement Unit - Nashik" }
         _isLoggedIn.value = true
         return true
     }
@@ -119,6 +203,7 @@ class DemoTestViewModel(
         _currentRecord.value = null
         _image.value = null
         _saved.value = false
+        _officerVerificationReport.value = null
     }
 
     fun setOperatorId(value: String) { _officerId.value = value }
@@ -158,6 +243,7 @@ class DemoTestViewModel(
             repository.saveRecord(it)
             _saved.value = true
             refreshRecords()
+            syncManager?.updatePendingCount()
         }
     }
 

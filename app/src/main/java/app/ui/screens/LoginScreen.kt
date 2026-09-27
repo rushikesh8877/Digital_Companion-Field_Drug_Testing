@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.data.DemoTestViewModel
 import com.sih.drugtestclassifier.auth.FirebaseAuthManager
+import com.sih.drugtestclassifier.auth.OfficerDepartmentVerifier
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,15 +37,39 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // Registration extra fields
+    // Registration extra fields (Officer provides their own ID & Department)
     var officerId by remember { mutableStateOf("OFFICER-7421") }
     var officerName by remember { mutableStateOf("Insp. R. Sharma") }
     var department by remember { mutableStateOf("Narcotics Enforcement Unit - Nashik") }
+
+    // Real-time departmental uniqueness validation
+    var availabilityStatus by remember { mutableStateOf<String?>(null) }
+    var isIdTaken by remember { mutableStateOf(false) }
 
     // UI state
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+
+    // Check departmental uniqueness whenever ID or department is modified during registration
+    LaunchedEffect(officerId, department, selectedTab) {
+        if (selectedTab == 1 && officerId.isNotBlank() && department.isNotBlank()) {
+            val res = viewModel.checkOfficerIdAvailability(department, officerId)
+            when (res) {
+                is OfficerDepartmentVerifier.GrantValidationResult.Denied -> {
+                    availabilityStatus = res.reason
+                    isIdTaken = true
+                }
+                is OfficerDepartmentVerifier.GrantValidationResult.Granted -> {
+                    availabilityStatus = "✓ Unique Officer ID available for this department"
+                    isIdTaken = false
+                }
+            }
+        } else {
+            availabilityStatus = null
+            isIdTaken = false
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -104,7 +129,7 @@ fun LoginScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Firebase-secured chain-of-custody field testing terminal",
+                        "Strict Departmental Officer ID Uniqueness · Cloud Cryptographic Chain of Custody",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -174,19 +199,41 @@ fun LoginScreen(
             )
 
             if (selectedTab == 1) {
-                // Officer Registration Details
+                // Officer Registration Details (ID provided by officer)
                 OutlinedTextField(
                     value = officerId,
                     onValueChange = {
                         officerId = it
                         errorMessage = null
                     },
-                    label = { Text("Officer / Badge ID") },
+                    label = { Text("Officer / Badge ID (Unique in Dept)") },
                     placeholder = { Text("e.g. OFFICER-7421") },
+                    supportingText = {
+                        Text("Each officer must provide their unique ID. No two officers can share the same ID in the same department.")
+                    },
+                    isError = isIdTaken,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                 )
+
+                // Real-time Availability & Uniqueness Indicator
+                if (availabilityStatus != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isIdTaken) MaterialTheme.colorScheme.errorContainer else Color(0xFFE8F5E9),
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            text = availabilityStatus!!,
+                            modifier = Modifier.padding(10.dp),
+                            color = if (isIdTaken) MaterialTheme.colorScheme.onErrorContainer else Color(0xFF2E7D32),
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        )
+                    }
+                }
 
                 OutlinedTextField(
                     value = officerName,
@@ -208,7 +255,10 @@ fun LoginScreen(
                         errorMessage = null
                     },
                     label = { Text("Department / Unit") },
-                    placeholder = { Text("e.g. Narcotics Enforcement Unit") },
+                    placeholder = { Text("e.g. Narcotics Enforcement Unit - Nashik") },
+                    supportingText = {
+                        Text("Department boundary within which your Officer ID is verified unique.")
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
@@ -305,8 +355,12 @@ fun LoginScreen(
                         }
                     } else {
                         // Register
-                        if (email.isBlank() || password.isBlank() || officerId.isBlank() || officerName.isBlank()) {
+                        if (email.isBlank() || password.isBlank() || officerId.isBlank() || officerName.isBlank() || department.isBlank()) {
                             errorMessage = "Please fill in all required registration fields."
+                            return@Button
+                        }
+                        if (isIdTaken) {
+                            errorMessage = availabilityStatus ?: "Officer ID '$officerId' is already registered in '$department'. Each officer must have a unique ID within their department."
                             return@Button
                         }
                         coroutineScope.launch {
@@ -349,7 +403,7 @@ fun LoginScreen(
             // Offline / Demo Mode Button
             OutlinedButton(
                 onClick = {
-                    val success = viewModel.login("OFFICER-7421", "Insp. R. Sharma (Nashik)", "1234")
+                    val success = viewModel.login("OFFICER-7421", "Insp. R. Sharma", "1234", "Narcotics Enforcement Unit - Nashik")
                     if (success) onLoginSuccess()
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -367,7 +421,7 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    "🔒 Firebase Cloud Auth · Offline Cryptographic Integrity",
+                    "🔒 Unique ID per Department · Verified Cryptographic Chain of Custody",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline,
                 )

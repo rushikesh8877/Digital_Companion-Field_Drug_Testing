@@ -77,6 +77,7 @@ data class DigitalTestRecord(
     val signature: String,
     val localImageUri: String = "",
     val locationAddress: String = "",
+    val isSynced: Boolean = false,
 )
 
 /** A simple RGB color sample (0-255 per channel) — internal to the classification pipeline. */

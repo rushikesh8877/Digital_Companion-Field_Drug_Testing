@@ -16,9 +16,15 @@ import app.ui.data.DemoTestViewModel
 import app.ui.ui.resultColor
 import com.sih.drugtestclassifier.models.DigitalTestRecord
 
+import androidx.compose.ui.graphics.Color
+
 @Composable
 fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (String) -> Unit) {
     val records by viewModel.records.collectAsState()
+    val isOnline by viewModel.isOnline.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
+    val pendingCount by viewModel.pendingSyncCount.collectAsState()
+
     var searchQuery by remember { mutableStateOf("") }
     var fromDate by remember { mutableStateOf("") }
     var toDate by remember { mutableStateOf("") }
@@ -36,6 +42,63 @@ fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (S
     }
 
     ScreenColumn("Digital Evidence Vault") {
+        // Cloud Sync Status Banner
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isOnline) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (isOnline) "🟢" else "🟠", fontSize = 16.sp)
+                    Column {
+                        Text(
+                            if (isOnline) "Firebase Cloud Connected" else "Offline Mode (Local Storage)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                        if (pendingCount > 0) {
+                            Text(
+                                "$pendingCount report(s) queued for sync",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        } else {
+                            Text(
+                                if (isOnline) "All officer reports synced in real time" else "Will sync automatically when reconnected",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (isOnline) {
+                    IconButton(
+                        onClick = { viewModel.syncNow() },
+                        enabled = !isSyncing,
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("🔄", fontSize = 18.sp)
+                        }
+                    }
+                }
+            }
+        }
+
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -121,10 +184,26 @@ private fun RecordCard(record: DigitalTestRecord, onClick: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    record.testId,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                )
+                Column {
+                    Text(
+                        record.testId,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (record.isSynced) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
+                    ) {
+                        Text(
+                            if (record.isSynced) "☁️ Cloud Synced" else "📱 Offline (Pending Sync)",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (record.isSynced) Color(0xFF2E7D32) else Color(0xFFE65100),
+                            ),
+                        )
+                    }
+                }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = resultColor(record.result).copy(alpha = 0.15f),

@@ -21,4 +21,16 @@ class TestRepository(
     suspend fun filterByResult(result: String): List<DigitalTestRecord> {
         return dao.filterByResult(result)
     }
+
+    suspend fun getUnsyncedTests(): List<DigitalTestRecord> {
+        return dao.getUnsyncedTests()
+    }
+
+    suspend fun markAsSynced(testId: String) {
+        dao.markAsSynced(testId)
+    }
+
+    suspend fun insertTests(records: List<DigitalTestRecord>) {
+        dao.insertTests(records)
+    }
 }
