@@ -22,7 +22,7 @@ object EmailOtpConfig {
      * Obtain from: https://app.brevo.com/settings/keys/api
      * Leave blank if using Resend, Firebase Trigger Email extension or custom webhook.
      */
-    var BREVO_API_KEY: String = ""
+    var BREVO_API_KEY: String = "xsmtpsib-a296235494dd40578ff78bcc157493fcee0c7db6ca4c908ddacff663a4ef7cad-p9FNduy8CXnhRc04"
 
     /**
      * Verified sender email configured in your Brevo account.
