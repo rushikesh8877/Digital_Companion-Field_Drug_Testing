@@ -58,6 +58,53 @@ class DemoTestViewModel(
     val verificationDetail: StateFlow<VerificationResult?> = _verificationDetail.asStateFlow()
 
     // --- Authentication Actions ---
+    private var authManager: com.sih.drugtestclassifier.auth.FirebaseAuthManager? = null
+
+    fun attachAuthManager(manager: com.sih.drugtestclassifier.auth.FirebaseAuthManager) {
+        this.authManager = manager
+        manager.getCurrentOfficer()?.let { profile ->
+            _officerId.value = profile.badgeId
+            _officerName.value = profile.name
+            _department.value = profile.department
+            _isLoggedIn.value = true
+        }
+    }
+
+    suspend fun firebaseSignIn(email: String, pass: String): com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult {
+        val manager = authManager ?: return com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
+        val result = manager.signIn(email, pass)
+        if (result is com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Success) {
+            _officerId.value = result.profile.badgeId
+            _officerName.value = result.profile.name
+            _department.value = result.profile.department
+            _isLoggedIn.value = true
+        }
+        return result
+    }
+
+    suspend fun firebaseRegister(
+        email: String,
+        pass: String,
+        badgeId: String,
+        name: String,
+        dept: String
+    ): com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult {
+        val manager = authManager ?: return com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
+        val result = manager.register(email, pass, badgeId, name, dept)
+        if (result is com.sih.drugtestclassifier.auth.FirebaseAuthManager.AuthResult.Success) {
+            _officerId.value = result.profile.badgeId
+            _officerName.value = result.profile.name
+            _department.value = result.profile.department
+            _isLoggedIn.value = true
+        }
+        return result
+    }
+
+    suspend fun sendPasswordReset(email: String): Result<Unit> {
+        val manager = authManager ?: return Result.failure(IllegalStateException("Firebase Auth manager not initialized."))
+        return manager.resetPassword(email)
+    }
+
     fun login(id: String, name: String, pin: String): Boolean {
         if (id.isBlank() || pin.length < 4) return false
         _officerId.value = id.trim()
@@ -67,6 +114,7 @@ class DemoTestViewModel(
     }
 
     fun logout() {
+        authManager?.signOut()
         _isLoggedIn.value = false
         _currentRecord.value = null
         _image.value = null

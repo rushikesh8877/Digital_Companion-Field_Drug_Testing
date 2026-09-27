@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "25914399832",
+    "project_id": "digital-companion-b88a2",
+    "storage_bucket": "digital-companion-b88a2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:25914399832:android:5ab7026f643e929ab47e2d",
+        "android_client_info": {
+          "package_name": "com.sih.drugtestclassifier"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA4jvt0zupfdbA2eIhzjcBXAtHW8Dxcszw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
