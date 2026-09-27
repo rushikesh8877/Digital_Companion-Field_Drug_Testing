@@ -9,7 +9,7 @@ import com.sih.drugtestclassifier.models.DigitalTestRecord
         DigitalTestRecord::class,
         OfficerEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -53,6 +53,12 @@ class FirebaseAuthManager(private val context: Context) {
         val badgeId: String,
         val name: String,
         val department: String,
+        val gender: String = "Male",
+        val rank: String = "Inspector",
+        val serviceNumber: String = "MH-POL-7421",
+        val district: String = "Nashik",
+        val phone: String = "+91 98230 44521",
+        val isEmailVerified: Boolean = true,
     )
 
     sealed class AuthResult {
@@ -75,10 +81,15 @@ class FirebaseAuthManager(private val context: Context) {
         val name = user.displayName?.ifBlank { null }
             ?: prefs.getString(KEY_NAME_PREFIX + user.uid, null)
             ?: user.email?.substringBefore("@")
-            ?: "Insp. Officer"
+            ?: "Insp. R. Sharma"
         val department = prefs.getString(KEY_DEPT_PREFIX + user.uid, null)
-            ?: prefs.getString(KEY_LAST_DEPT, "Narcotics Enforcement Unit")
-            ?: "Narcotics Enforcement Unit"
+            ?: prefs.getString(KEY_LAST_DEPT, "Narcotics Enforcement Unit - Nashik")
+            ?: "Narcotics Enforcement Unit - Nashik"
+        val gender = prefs.getString(KEY_GENDER_PREFIX + user.uid, "Male") ?: "Male"
+        val rank = prefs.getString(KEY_RANK_PREFIX + user.uid, "Inspector") ?: "Inspector"
+        val serviceNumber = prefs.getString(KEY_SERVICE_NO_PREFIX + user.uid, "MH-POL-7421") ?: "MH-POL-7421"
+        val district = prefs.getString(KEY_DISTRICT_PREFIX + user.uid, "Nashik") ?: "Nashik"
+        val phone = prefs.getString(KEY_PHONE_PREFIX + user.uid, "+91 98230 44521") ?: "+91 98230 44521"
 
         return OfficerProfile(
             uid = user.uid,
@@ -86,6 +97,12 @@ class FirebaseAuthManager(private val context: Context) {
             badgeId = badgeId,
             name = name,
             department = department,
+            gender = gender,
+            rank = rank,
+            serviceNumber = serviceNumber,
+            district = district,
+            phone = phone,
+            isEmailVerified = true,
         )
     }
 
@@ -165,6 +182,11 @@ class FirebaseAuthManager(private val context: Context) {
             var badgeId: String? = null
             var dept: String? = null
             var name: String? = null
+            var gender: String? = null
+            var rank: String? = null
+            var serviceNumber: String? = null
+            var district: String? = null
+            var phone: String? = null
 
             // 1. Fetch cloud profile from Firestore
             val fs = firestore
@@ -175,6 +197,11 @@ class FirebaseAuthManager(private val context: Context) {
                         badgeId = doc.getString("badgeId")
                         dept = doc.getString("department")
                         name = doc.getString("name")
+                        gender = doc.getString("gender")
+                        rank = doc.getString("rank")
+                        serviceNumber = doc.getString("serviceNumber")
+                        district = doc.getString("district")
+                        phone = doc.getString("phone")
                     }
                 } catch (_: Exception) {
                 }
@@ -189,6 +216,11 @@ class FirebaseAuthManager(private val context: Context) {
                         badgeId = localOfficer.badgeId
                         dept = localOfficer.department
                         name = localOfficer.name
+                        gender = localOfficer.gender
+                        rank = localOfficer.rank
+                        serviceNumber = localOfficer.serviceNumber
+                        district = localOfficer.district
+                        phone = localOfficer.phone
                     }
                 } catch (_: Exception) {
                 }
@@ -203,17 +235,27 @@ class FirebaseAuthManager(private val context: Context) {
                 ?: user.displayName?.ifBlank { null }
                 ?: prefs.getString(KEY_NAME_PREFIX + user.uid, null)
                 ?: user.email?.substringBefore("@")
-                ?: "Insp. Officer"
+                ?: "Insp. R. Sharma"
             dept = dept
                 ?: prefs.getString(KEY_DEPT_PREFIX + user.uid, null)
-                ?: prefs.getString(KEY_LAST_DEPT, "Narcotics Enforcement Unit")
-                ?: "Narcotics Enforcement Unit"
+                ?: prefs.getString(KEY_LAST_DEPT, "Narcotics Enforcement Unit - Nashik")
+                ?: "Narcotics Enforcement Unit - Nashik"
+            gender = gender ?: prefs.getString(KEY_GENDER_PREFIX + user.uid, "Male") ?: "Male"
+            rank = rank ?: prefs.getString(KEY_RANK_PREFIX + user.uid, "Inspector") ?: "Inspector"
+            serviceNumber = serviceNumber ?: prefs.getString(KEY_SERVICE_NO_PREFIX + user.uid, "MH-POL-7421") ?: "MH-POL-7421"
+            district = district ?: prefs.getString(KEY_DISTRICT_PREFIX + user.uid, "Nashik") ?: "Nashik"
+            phone = phone ?: prefs.getString(KEY_PHONE_PREFIX + user.uid, "+91 98230 44521") ?: "+91 98230 44521"
 
             // Cache to local SharedPreferences
             prefs.edit()
                 .putString(KEY_BADGE_ID_PREFIX + user.uid, badgeId)
                 .putString(KEY_NAME_PREFIX + user.uid, name)
                 .putString(KEY_DEPT_PREFIX + user.uid, dept)
+                .putString(KEY_GENDER_PREFIX + user.uid, gender)
+                .putString(KEY_RANK_PREFIX + user.uid, rank)
+                .putString(KEY_SERVICE_NO_PREFIX + user.uid, serviceNumber)
+                .putString(KEY_DISTRICT_PREFIX + user.uid, district)
+                .putString(KEY_PHONE_PREFIX + user.uid, phone)
                 .putString(KEY_LAST_BADGE_ID, badgeId)
                 .putString(KEY_LAST_NAME, name)
                 .putString(KEY_LAST_DEPT, dept)
@@ -231,6 +273,12 @@ class FirebaseAuthManager(private val context: Context) {
                         department = dept,
                         departmentNormalized = OfficerDepartmentVerifier.normalizeDepartment(dept),
                         badgeIdNormalized = OfficerDepartmentVerifier.normalizeBadgeId(badgeId),
+                        gender = gender,
+                        rank = rank,
+                        serviceNumber = serviceNumber,
+                        district = district,
+                        phone = phone,
+                        isEmailVerified = true,
                     ),
                 )
             } catch (_: Exception) {
@@ -242,6 +290,12 @@ class FirebaseAuthManager(private val context: Context) {
                 badgeId = badgeId,
                 name = name,
                 department = dept,
+                gender = gender,
+                rank = rank,
+                serviceNumber = serviceNumber,
+                district = district,
+                phone = phone,
+                isEmailVerified = true,
             )
             AuthResult.Success(profile)
         } catch (e: FirebaseAuthInvalidUserException) {
@@ -264,11 +318,22 @@ class FirebaseAuthManager(private val context: Context) {
         badgeId: String,
         name: String,
         department: String,
+        gender: String = "Male",
+        rank: String = "Inspector",
+        serviceNumber: String = "MH-POL-7421",
+        district: String = "Nashik",
+        phone: String = "+91 98230 44521",
+        isEmailVerified: Boolean = true,
     ): AuthResult = withContext(Dispatchers.IO) {
         val trimmedEmail = email.trim()
         val trimmedBadge = badgeId.trim()
         val trimmedName = name.trim()
         val trimmedDept = department.trim().ifBlank { "Narcotics Enforcement Unit" }
+        val trimmedGender = gender.trim().ifBlank { "Male" }
+        val trimmedRank = rank.trim().ifBlank { "Inspector" }
+        val trimmedServiceNo = serviceNumber.trim().ifBlank { "MH-POL-7421" }
+        val trimmedDistrict = district.trim().ifBlank { "Nashik" }
+        val trimmedPhone = phone.trim()
 
         if (trimmedEmail.isBlank() || password.isBlank()) {
             return@withContext AuthResult.Error("Email and password are required.")
@@ -318,6 +383,12 @@ class FirebaseAuthManager(private val context: Context) {
                         "badgeId" to trimmedBadge,
                         "name" to trimmedName,
                         "department" to trimmedDept,
+                        "gender" to trimmedGender,
+                        "rank" to trimmedRank,
+                        "serviceNumber" to trimmedServiceNo,
+                        "district" to trimmedDistrict,
+                        "phone" to trimmedPhone,
+                        "isEmailVerified" to isEmailVerified,
                         "departmentNormalized" to normDept,
                         "badgeIdNormalized" to normBadge,
                         "registeredAt" to System.currentTimeMillis(),
@@ -348,6 +419,12 @@ class FirebaseAuthManager(private val context: Context) {
                         department = trimmedDept,
                         departmentNormalized = normDept,
                         badgeIdNormalized = normBadge,
+                        gender = trimmedGender,
+                        rank = trimmedRank,
+                        serviceNumber = trimmedServiceNo,
+                        district = trimmedDistrict,
+                        phone = trimmedPhone,
+                        isEmailVerified = isEmailVerified,
                     ),
                 )
             } catch (_: Exception) {
@@ -358,6 +435,11 @@ class FirebaseAuthManager(private val context: Context) {
                 .putString(KEY_BADGE_ID_PREFIX + user.uid, trimmedBadge)
                 .putString(KEY_NAME_PREFIX + user.uid, trimmedName)
                 .putString(KEY_DEPT_PREFIX + user.uid, trimmedDept)
+                .putString(KEY_GENDER_PREFIX + user.uid, trimmedGender)
+                .putString(KEY_RANK_PREFIX + user.uid, trimmedRank)
+                .putString(KEY_SERVICE_NO_PREFIX + user.uid, trimmedServiceNo)
+                .putString(KEY_DISTRICT_PREFIX + user.uid, trimmedDistrict)
+                .putString(KEY_PHONE_PREFIX + user.uid, trimmedPhone)
                 .putString(KEY_LAST_BADGE_ID, trimmedBadge)
                 .putString(KEY_LAST_NAME, trimmedName)
                 .putString(KEY_LAST_DEPT, trimmedDept)
@@ -369,6 +451,12 @@ class FirebaseAuthManager(private val context: Context) {
                 badgeId = trimmedBadge,
                 name = trimmedName,
                 department = trimmedDept,
+                gender = trimmedGender,
+                rank = trimmedRank,
+                serviceNumber = trimmedServiceNo,
+                district = trimmedDistrict,
+                phone = trimmedPhone,
+                isEmailVerified = isEmailVerified,
             )
             AuthResult.Success(profile)
         } catch (e: FirebaseAuthWeakPasswordException) {
@@ -426,6 +514,11 @@ class FirebaseAuthManager(private val context: Context) {
         badgeId: String = "OFFICER-7421",
         name: String = "Insp. R. Sharma",
         department: String = "Narcotics Enforcement Unit - Nashik",
+        gender: String = "Male",
+        rank: String = "Inspector",
+        serviceNumber: String = "MH-POL-7421",
+        district: String = "Nashik",
+        phone: String = "+91 98230 44521",
     ): OfficerProfile {
         val trimmedBadge = badgeId.trim()
         val trimmedName = name.trim()
@@ -434,14 +527,25 @@ class FirebaseAuthManager(private val context: Context) {
             .putString(KEY_LAST_BADGE_ID, trimmedBadge)
             .putString(KEY_LAST_NAME, trimmedName)
             .putString(KEY_LAST_DEPT, trimmedDept)
+            .putString(KEY_LAST_GENDER, gender)
+            .putString(KEY_LAST_RANK, rank)
+            .putString(KEY_LAST_SERVICE_NO, serviceNumber)
+            .putString(KEY_LAST_DISTRICT, district)
+            .putString(KEY_LAST_PHONE, phone)
             .apply()
 
         return OfficerProfile(
             uid = "demo-officer-uid",
-            email = "r.sharma@narcotics.gov.in",
+            email = "officer@narcotics.gov.in",
             badgeId = trimmedBadge,
             name = trimmedName,
             department = trimmedDept,
+            gender = gender,
+            rank = rank,
+            serviceNumber = serviceNumber,
+            district = district,
+            phone = phone,
+            isEmailVerified = true,
         )
     }
 
@@ -450,9 +554,20 @@ class FirebaseAuthManager(private val context: Context) {
         private const val KEY_BADGE_ID_PREFIX = "badge_"
         private const val KEY_NAME_PREFIX = "name_"
         private const val KEY_DEPT_PREFIX = "dept_"
+        private const val KEY_GENDER_PREFIX = "gender_"
+        private const val KEY_RANK_PREFIX = "rank_"
+        private const val KEY_SERVICE_NO_PREFIX = "service_no_"
+        private const val KEY_DISTRICT_PREFIX = "district_"
+        private const val KEY_PHONE_PREFIX = "phone_"
+
         private const val KEY_LAST_BADGE_ID = "last_badge_id"
         private const val KEY_LAST_NAME = "last_officer_name"
         private const val KEY_LAST_DEPT = "last_officer_dept"
+        private const val KEY_LAST_GENDER = "last_officer_gender"
+        private const val KEY_LAST_RANK = "last_officer_rank"
+        private const val KEY_LAST_SERVICE_NO = "last_officer_service_no"
+        private const val KEY_LAST_DISTRICT = "last_officer_district"
+        private const val KEY_LAST_PHONE = "last_officer_phone"
 
         @Volatile
         private var instance: FirebaseAuthManager? = null

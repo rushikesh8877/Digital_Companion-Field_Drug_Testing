@@ -62,10 +62,13 @@ class FakeTestRecordRepository : TestRecordRepository {
         classification: ClassificationResult,
         customLocation: LocationHelper.LatLon?,
     ): DigitalTestRecord {
-        val id = "ST-${image.capturedAt.toString().takeLast(8)}"
+        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = image.capturedAt }
+        val year = calendar.get(java.util.Calendar.YEAR)
+        val seq = (image.capturedAt % 1000000).toString().padStart(6, '0')
+        val id = "FT-$year-$seq"
         val lat = customLocation?.latitude ?: 20.0059
         val lon = customLocation?.longitude ?: 73.7600
-        val address = customLocation?.address?.ifBlank { null } ?: "College Road, Nashik"
+        val address = customLocation?.address?.ifBlank { null } ?: "Makhmalabad Road, Nashik"
         return DigitalTestRecord(
             testId = id,
             operatorId = operatorId.ifBlank { "OP-1042" },

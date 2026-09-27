@@ -53,6 +53,7 @@ import kotlin.math.pow
 /** Manifest: <uses-permission android:name="android.permission.CAMERA" /> */
 class CameraCaptureFragment : Fragment() {
     var onImageCaptured: ((TestImage) -> Unit)? = null
+    var hideDefaultControls: Boolean = true
     private var preview: PreviewView? = null
     private var message: TextView? = null
     private var shutter: Button? = null
@@ -61,6 +62,10 @@ class CameraCaptureFragment : Fragment() {
     private var provider: ProcessCameraProvider? = null
     private var busy = false
     private val worker = Executors.newSingleThreadExecutor()
+
+    fun triggerCapture() {
+        lockThenCapture()
+    }
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) startCamera() else show("Camera permission is required.")
@@ -75,21 +80,25 @@ class CameraCaptureFragment : Fragment() {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
         stage.addView(preview, FrameLayout.LayoutParams(-1, -1))
-        stage.addView(Guide(requireContext()), FrameLayout.LayoutParams(-1, -1))
-        message = TextView(requireContext()).apply {
-            text = "Fit both the test strip and reference color card inside the guide."
-            setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
-            setPadding(16, 14, 16, 14); setBackgroundColor(0x99000000.toInt())
+        
+        // If Compose handles the guide and buttons, don't show legacy Android views
+        if (!hideDefaultControls) {
+            stage.addView(Guide(requireContext()), FrameLayout.LayoutParams(-1, -1))
+            message = TextView(requireContext()).apply {
+                text = "Fit both the test strip and reference color card inside the guide."
+                setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
+                setPadding(16, 14, 16, 14); setBackgroundColor(0x99000000.toInt())
+            }
+            root.addView(message, LinearLayout.LayoutParams(-1, -2))
+            val row = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER; setPadding(8, 8, 8, 16) }
+            row.addView(Button(requireContext()).apply {
+                text = "Unlock / retry"; setOnClickListener { unlockAndRetry() }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            shutter = Button(requireContext()).apply {
+                text = "Capture"; isEnabled = false; setOnClickListener { lockThenCapture() }
+            }
+            row.addView(shutter, LinearLayout.LayoutParams(0, -2, 1f)); root.addView(row)
         }
-        root.addView(message, LinearLayout.LayoutParams(-1, -2))
-        val row = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER; setPadding(8, 8, 8, 16) }
-        row.addView(Button(requireContext()).apply {
-            text = "Unlock / retry"; setOnClickListener { unlockAndRetry() }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        shutter = Button(requireContext()).apply {
-            text = "Capture"; isEnabled = false; setOnClickListener { lockThenCapture() }
-        }
-        row.addView(shutter, LinearLayout.LayoutParams(0, -2, 1f)); root.addView(row)
         return root
     }
 
@@ -221,28 +230,51 @@ class CameraCaptureFragment : Fragment() {
     }
 }
 
-/** Static framing aid only; it does not detect a card. */
+/** Static framing aid with color dividation and test strip alignment guide. */
 private class Guide(context: Context) : View(context) {
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4f
+        color = Color.parseColor("#E58325"); style = Paint.Style.STROKE; strokeWidth = 6f
         setShadowLayer(8f, 0f, 0f, Color.BLACK)
     }
     private val divider = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xCCFFFFFF.toInt(); style = Paint.Style.STROKE; strokeWidth = 2f
+        color = Color.parseColor("#E58325"); style = Paint.Style.STROKE; strokeWidth = 3f
+    }
+    private val colorBandDivider = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x88FFA726.toInt(); style = Paint.Style.STROKE; strokeWidth = 2f
     }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 32f; textAlign = Paint.Align.CENTER
-        setShadowLayer(5f, 0f, 1f, Color.BLACK)
+        color = Color.WHITE; textSize = 26f; textAlign = Paint.Align.CENTER; isFakeBoldText = true
+        setShadowLayer(6f, 0f, 1f, Color.BLACK)
     }
+    private val subLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xCCFFFFFF.toInt(); textSize = 18f; textAlign = Paint.Align.LEFT
+        setShadowLayer(4f, 0f, 1f, Color.BLACK)
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val r = RectF(width * .08f, height * .25f, width * .92f, height * .72f)
-        canvas.drawRoundRect(r, 18f, 18f, outline)
-        val x = r.left + r.width() * .57f
+        val r = RectF(width * .08f, height * .22f, width * .92f, height * .68f)
+        canvas.drawRoundRect(r, 22f, 22f, outline)
+        val x = r.left + r.width() * .58f
+        // Vertical divider separating Color Matrix and Test Strip
         canvas.drawLine(x, r.top, x, r.bottom, divider)
-        canvas.drawText("REFERENCE CARD", r.left + r.width() * .285f, r.top - 18f, label)
-        canvas.drawText("TEST STRIP", x + (r.right - x) / 2f, r.top - 18f, label)
-        canvas.drawText("Fit both inside the guide", width / 2f, r.bottom + 46f, label)
+        
+        // Color Matrix horizontal divisions
+        val bandHeight = r.height() / 4f
+        for (i in 1..3) {
+            val y = r.top + i * bandHeight
+            canvas.drawLine(r.left, y, x, y, colorBandDivider)
+        }
+        
+        // Labels
+        canvas.drawText("COLOR MATRIX", r.left + (x - r.left) / 2f, r.top - 14f, label)
+        canvas.drawText("TEST STRIP", x + (r.right - x) / 2f, r.top - 14f, label)
+        
+        // Swatch division guides inside left area
+        canvas.drawText("1: Baseline", r.left + 16f, r.top + bandHeight * 0.6f, subLabel)
+        canvas.drawText("2: Ref A", r.left + 16f, r.top + bandHeight * 1.6f, subLabel)
+        canvas.drawText("3: Ref B", r.left + 16f, r.top + bandHeight * 2.6f, subLabel)
+        canvas.drawText("4: Control", r.left + 16f, r.top + bandHeight * 3.6f, subLabel)
     }
 }
 

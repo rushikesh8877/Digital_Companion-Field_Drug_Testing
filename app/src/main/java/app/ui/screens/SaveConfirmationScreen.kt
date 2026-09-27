@@ -1,19 +1,26 @@
 package app.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.data.DemoTestViewModel
-
-import androidx.compose.ui.graphics.Color
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,10 +37,22 @@ fun SaveConfirmationScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        if (saved) "Record Saved Successfully" else "Review & Confirm Report",
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Image(
+                            painter = painterResource(id = com.sih.drugtestclassifier.R.drawable.app_logo),
+                            contentDescription = "Government Digital Forensics Law Enforcement Logo",
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape),
+                        )
+                        Text(
+                            if (saved) "Record Saved Successfully" else "Review & Confirm Report",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -84,10 +103,21 @@ fun SaveConfirmationScreen(
                                 containerColor = MaterialTheme.colorScheme.primary,
                             ),
                         ) {
-                            Text(
-                                "💾 Save Record to Database",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Save,
+                                    contentDescription = "Save",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Text(
+                                    "Save Record to Database",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                )
+                            }
                         }
                     }
                 }
@@ -115,7 +145,12 @@ fun SaveConfirmationScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(if (isOnline) "☁️" else "📱", fontSize = 28.sp)
+                        Icon(
+                            imageVector = if (isOnline) Icons.Filled.CloudDone else Icons.Filled.PhoneAndroid,
+                            contentDescription = if (isOnline) "Cloud Synced" else "Local Storage",
+                            tint = if (isOnline) MaterialTheme.colorScheme.primary else Color(0xFFE65100),
+                            modifier = Modifier.size(32.dp),
+                        )
                         Column {
                             Text(
                                 if (isOnline) "Saved & Synced to Cloud" else "Saved to Local Database (Offline)",

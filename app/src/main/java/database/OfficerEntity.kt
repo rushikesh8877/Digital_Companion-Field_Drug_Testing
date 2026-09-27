@@ -27,5 +27,11 @@ data class OfficerEntity(
     val department: String,
     val departmentNormalized: String,
     val badgeIdNormalized: String,
+    val gender: String = "Male",
+    val rank: String = "Inspector",
+    val serviceNumber: String = "",
+    val district: String = "Nashik",
+    val phone: String = "",
+    val isEmailVerified: Boolean = true,
     val registeredAt: Long = System.currentTimeMillis(),
 )

@@ -2,6 +2,7 @@ package app.ui.data
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sih.drugtestclassifier.auth.EmailOtpService
 import com.sih.drugtestclassifier.auth.FirebaseAuthManager
 import com.sih.drugtestclassifier.auth.OfficerDepartmentVerifier
 import com.sih.drugtestclassifier.location.LocationHelper
@@ -31,6 +32,47 @@ class DemoTestViewModel(
 
     private val _department = MutableStateFlow("Narcotics Enforcement Unit - Nashik")
     val department: StateFlow<String> = _department.asStateFlow()
+
+    private val _gender = MutableStateFlow("Male")
+    val gender: StateFlow<String> = _gender.asStateFlow()
+
+    private val _rank = MutableStateFlow("Inspector")
+    val rank: StateFlow<String> = _rank.asStateFlow()
+
+    private val _serviceNumber = MutableStateFlow("MH-POL-7421")
+    val serviceNumber: StateFlow<String> = _serviceNumber.asStateFlow()
+
+    private val _district = MutableStateFlow("Nashik")
+    val district: StateFlow<String> = _district.asStateFlow()
+
+    private val _phone = MutableStateFlow("+91 98230 44521")
+    val phone: StateFlow<String> = _phone.asStateFlow()
+
+    // --- Official Email Verification System ---
+    private val emailOtpService = EmailOtpService.getInstance()
+    private val _isEmailVerified = MutableStateFlow(false)
+    val isEmailVerified: StateFlow<Boolean> = _isEmailVerified.asStateFlow()
+
+    suspend fun sendEmailVerificationOtp(targetEmail: String): EmailOtpService.SendResult {
+        _isEmailVerified.value = false
+        return emailOtpService.sendOtp(targetEmail)
+    }
+
+    suspend fun verifyEmailOtp(targetEmail: String, enteredOtp: String): EmailOtpService.VerifyResult {
+        val result = emailOtpService.verifyOtp(targetEmail, enteredOtp)
+        if (result is EmailOtpService.VerifyResult.Success) {
+            _isEmailVerified.value = true
+        }
+        return result
+    }
+
+    fun resetEmailVerification() {
+        _isEmailVerified.value = false
+    }
+
+    fun setEmailVerifiedManually(verified: Boolean) {
+        _isEmailVerified.value = verified
+    }
 
     // --- Officer ID & Department Uniqueness Verification ---
     private val _officerVerificationReport = MutableStateFlow<OfficerDepartmentVerifier.OfficerVerificationReport?>(null)
@@ -111,6 +153,11 @@ class DemoTestViewModel(
             _officerId.value = profile.badgeId
             _officerName.value = profile.name
             _department.value = profile.department
+            _gender.value = profile.gender
+            _rank.value = profile.rank
+            _serviceNumber.value = profile.serviceNumber
+            _district.value = profile.district
+            _phone.value = profile.phone
             _isLoggedIn.value = true
         }
     }
@@ -155,6 +202,11 @@ class DemoTestViewModel(
             _officerId.value = result.profile.badgeId
             _officerName.value = result.profile.name
             _department.value = result.profile.department
+            _gender.value = result.profile.gender
+            _rank.value = result.profile.rank
+            _serviceNumber.value = result.profile.serviceNumber
+            _district.value = result.profile.district
+            _phone.value = result.profile.phone
             _isLoggedIn.value = true
         }
         return result
@@ -166,13 +218,36 @@ class DemoTestViewModel(
         badgeId: String,
         name: String,
         dept: String,
+        gender: String = "Male",
+        rank: String = "Inspector",
+        serviceNumber: String = "MH-POL-7421",
+        district: String = "Nashik",
+        phone: String = "+91 98230 44521",
+        isEmailVerified: Boolean = true,
     ): FirebaseAuthManager.AuthResult {
         val manager = authManager ?: return FirebaseAuthManager.AuthResult.Error("Firebase Auth manager not initialized.")
-        val result = manager.register(email, pass, badgeId, name, dept)
+        val result = manager.register(
+            email = email,
+            password = pass,
+            badgeId = badgeId,
+            name = name,
+            department = dept,
+            gender = gender,
+            rank = rank,
+            serviceNumber = serviceNumber,
+            district = district,
+            phone = phone,
+            isEmailVerified = isEmailVerified,
+        )
         if (result is FirebaseAuthManager.AuthResult.Success) {
             _officerId.value = result.profile.badgeId
             _officerName.value = result.profile.name
             _department.value = result.profile.department
+            _gender.value = result.profile.gender
+            _rank.value = result.profile.rank
+            _serviceNumber.value = result.profile.serviceNumber
+            _district.value = result.profile.district
+            _phone.value = result.profile.phone
             _isLoggedIn.value = true
         }
         return result
@@ -188,11 +263,21 @@ class DemoTestViewModel(
         name: String,
         pin: String,
         department: String = "Narcotics Enforcement Unit - Nashik",
+        gender: String = "Male",
+        rank: String = "Inspector",
+        serviceNumber: String = "MH-POL-7421",
+        district: String = "Nashik",
+        phone: String = "+91 98230 44521",
     ): Boolean {
         if (id.isBlank() || pin.length < 4) return false
         _officerId.value = id.trim()
-        _officerName.value = name.trim().ifBlank { "Officer ${id.trim()}" }
+        _officerName.value = name.trim().ifBlank { "Insp. R. Sharma" }
         _department.value = department.trim().ifBlank { "Narcotics Enforcement Unit - Nashik" }
+        _gender.value = gender
+        _rank.value = rank
+        _serviceNumber.value = serviceNumber
+        _district.value = district
+        _phone.value = phone
         _isLoggedIn.value = true
         return true
     }

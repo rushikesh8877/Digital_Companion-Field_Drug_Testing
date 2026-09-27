@@ -77,6 +77,7 @@ fun AppNavGraph(navController: NavHostController, viewModel: DemoTestViewModel) 
                         popUpTo(Routes.RESULT) { inclusive = true }
                     }
                 },
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Routes.SAVE) {

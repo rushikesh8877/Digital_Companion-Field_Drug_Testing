@@ -1,22 +1,28 @@
 package app.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.data.DemoTestViewModel
 import app.ui.ui.resultColor
 import com.sih.drugtestclassifier.models.DigitalTestRecord
-
-import androidx.compose.ui.graphics.Color
 
 @Composable
 fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (String) -> Unit) {
@@ -63,7 +69,15 @@ fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (S
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(if (isOnline) "🟢" else "🟠", fontSize = 16.sp)
+                    // Actual Green Dot (or Amber Dot if offline)
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                color = if (isOnline) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                shape = CircleShape,
+                            ),
+                    )
                     Column {
                         Text(
                             if (isOnline) "Firebase Cloud Connected" else "Offline Mode (Local Storage)",
@@ -92,7 +106,13 @@ fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (S
                         if (isSyncing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("🔄", fontSize = 18.sp)
+                            // Actual Refresh Button
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Sync now",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
                     }
                 }
@@ -128,52 +148,49 @@ fun HistoryScreen(viewModel: DemoTestViewModel, onBack: () -> Unit, onRecord: (S
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            results.forEach { item ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            results.forEach { r ->
+                val selected = result == r
                 FilterChip(
-                    selected = result == item,
-                    onClick = { result = item },
-                    label = { Text(item) },
+                    selected = selected,
+                    onClick = { result = r },
+                    label = { Text(r, style = MaterialTheme.typography.labelSmall) },
                 )
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "${filtered.size} records found",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            )
-        }
+        Text(
+            "${filtered.size} record(s) found",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.weight(1f),
         ) {
-            items(filtered, key = { it.testId }) { record ->
-                RecordCard(record) { onRecord(record.testId) }
+            items(filtered) { record ->
+                RecordRow(record, onClick = { onRecord(record.testId) })
             }
         }
 
-        Button(
-            onClick = onBack,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text("Back to Dashboard")
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Back")
         }
     }
 }
 
 @Composable
-private fun RecordCard(record: DigitalTestRecord, onClick: () -> Unit) {
+private fun RecordRow(record: DigitalTestRecord, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -194,14 +211,25 @@ private fun RecordCard(record: DigitalTestRecord, onClick: () -> Unit) {
                         shape = RoundedCornerShape(6.dp),
                         color = if (record.isSynced) Color(0xFFE8F5E9) else Color(0xFFFFF3E0),
                     ) {
-                        Text(
-                            if (record.isSynced) "☁️ Cloud Synced" else "📱 Offline (Pending Sync)",
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = if (record.isSynced) Color(0xFF2E7D32) else Color(0xFFE65100),
-                            ),
-                        )
+                        ) {
+                            Icon(
+                                imageVector = if (record.isSynced) Icons.Filled.CloudDone else Icons.Filled.PhoneAndroid,
+                                contentDescription = if (record.isSynced) "Cloud Synced" else "Local Phone Storage",
+                                tint = if (record.isSynced) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text(
+                                if (record.isSynced) "Cloud Synced" else "Offline (Pending Sync)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (record.isSynced) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                ),
+                            )
+                        }
                     }
                 }
                 Surface(
@@ -233,7 +261,12 @@ private fun RecordCard(record: DigitalTestRecord, onClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("📍", fontSize = 14.sp)
+                Icon(
+                    imageVector = Icons.Filled.Place,
+                    contentDescription = "Location Pin",
+                    tint = Color(0xFFE53935),
+                    modifier = Modifier.size(15.dp),
+                )
                 Text(
                     locationDisplay,
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
@@ -246,4 +279,3 @@ private fun RecordCard(record: DigitalTestRecord, onClick: () -> Unit) {
 
 private fun dateOnly(timestamp: Long): String =
     java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(timestamp))
-

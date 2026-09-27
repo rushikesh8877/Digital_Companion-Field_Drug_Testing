@@ -84,9 +84,12 @@ class RealTestRecordRepository(
     ): DigitalTestRecord {
         val bytes = readBytes(image.imageUri) ?: ByteArray(0)
         val imageHash = hashImage(bytes)
+        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = image.capturedAt }
+        val year = calendar.get(java.util.Calendar.YEAR)
+        val seq = (image.capturedAt % 1000000).toString().padStart(6, '0')
+        val testId = "FT-$year-$seq"
+        val resolvedOperatorId = operatorId.ifBlank { "OFFICER-7421" }
         val location = customLocation ?: LocationHelper.lastKnown(context)
-        val testId = "ST-${image.capturedAt.toString().takeLast(8)}"
-        val resolvedOperatorId = operatorId.ifBlank { "OP-UNKNOWN" }
 
         val canonical = buildCanonicalRecord(
             testId = testId,
