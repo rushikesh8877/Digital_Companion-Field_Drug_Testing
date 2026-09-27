@@ -1,0 +1,17 @@
+{
+  "kitId": "PLACEHOLDER_KIT_V1",
+  "displayName": "PLACEHOLDER — replace with actual kit name",
+  "_TODO": "These Lab values and the offsets below are derived from THIS PROJECT'S SYNTHETIC sample images (tools/generate_sample_images.dart) so the pipeline classifies correctly out of the box during development. Before the demo, replace 'references' with values measured/derived from the ACTUAL field-test kit's own documented colour-interpretation reference sheet (per the project doc's instruction not to invent drug-specific thresholds) — and re-run generate_sample_images.dart (or capture real photos) against the real kit's layout.",
+
+  "testAreaOffsetXFractionOfCardWidth": 1.15,
+  "testAreaOffsetYFractionOfCardHeight": 0.35,
+  "testAreaWidthFractionOfCardWidth": 0.25,
+  "testAreaHeightFractionOfCardHeight": 0.3,
+
+  "maxConfidentDeltaE": 18.0,
+
+  "references": [
+    { "outcome": "negative", "lab": { "l": 90.0, "a": 2.0, "b": 2.0 } },
+    { "outcome": "positive", "lab": { "l": 41.5, "a": 45.0, "b": 21.0 } }
+  ]
+}
