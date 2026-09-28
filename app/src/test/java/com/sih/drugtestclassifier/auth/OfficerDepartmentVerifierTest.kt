@@ -69,8 +69,7 @@ class OfficerDepartmentVerifierTest {
             result is OfficerDepartmentVerifier.GrantValidationResult.Denied,
         )
         val denied = result as OfficerDepartmentVerifier.GrantValidationResult.Denied
-        assertTrue(denied.reason.contains("already registered in 'Narcotics Enforcement Unit - Nashik'"))
-        assertTrue(denied.reason.contains("Insp. R. Sharma"))
+        assertTrue(denied.reason.contains("already registered in this department"))
     }
 
     @Test

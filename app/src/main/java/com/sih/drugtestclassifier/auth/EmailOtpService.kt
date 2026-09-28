@@ -9,19 +9,21 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.OutputStreamWriter
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
 import java.net.URL
 import java.security.SecureRandom
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 
 /**
  * Real email verification pipeline for official law enforcement officer registration.
  *
  * Dispatches cryptographically random 6-digit OTPs via:
- *  1. Firebase Firestore Trigger Email extension ('mail' collection).
- *  2. Brevo / Sendinblue transactional email REST API.
- *  3. Resend email REST API.
- *  4. Custom email webhook endpoint.
+ *  1. Brevo (Sendinblue) transactional email REST API.
+ *  2. Custom email webhook endpoint (if configured).
+ *  3. Firebase Firestore Trigger Email extension ('mail' collection, if configured).
  *
  * Verifies that the entered code matches the dispatched code, validates expiry,
  * and limits incorrect attempts.
@@ -83,51 +85,49 @@ class EmailOtpService(private val context: Context? = null) {
             activeOtps[trimmedEmail] = record
         }
 
+        Log.i(TAG, "==========================================================")
+        Log.i(TAG, ">>> OFFICIAL VERIFICATION OTP FOR $trimmedEmail: $otpCode <<<")
+        Log.i(TAG, "==========================================================")
         Log.i(TAG, "Initiating real email OTP dispatch to: $trimmedEmail")
 
         var channelDispatched = false
         val errors = mutableListOf<String>()
 
-        val rawResend = EmailOtpConfig.RESEND_API_KEY.trim()
-        val rawBrevo = EmailOtpConfig.BREVO_API_KEY.trim()
-
-        val effectiveResendKey = when {
-            rawResend.isNotBlank() -> rawResend
-            rawBrevo.startsWith("re_") -> rawBrevo
-            else -> ""
-        }
-        val effectiveBrevoKey = when {
-            rawBrevo.startsWith("xkeysib-") -> rawBrevo
-            rawResend.startsWith("xkeysib-") -> rawResend
-            rawBrevo.isNotBlank() && !rawBrevo.startsWith("re_") -> rawBrevo
-            else -> ""
-        }
-
-        // 1. Dispatch via Resend REST API if configured
-        if (effectiveResendKey.isNotBlank()) {
+        // 1. Dispatch via Gmail SMTP (Direct SMTPS SSL on port 465) if configured
+        val effectiveGmailPass = EmailOtpConfig.GMAIL_APP_PASSWORD.trim().replace(" ", "")
+        val effectiveGmailSender = EmailOtpConfig.GMAIL_SENDER_EMAIL.trim()
+        if (effectiveGmailSender.isNotBlank() && effectiveGmailPass.isNotBlank()) {
             try {
-                sendViaResend(trimmedEmail, otpCode, effectiveResendKey)
+                sendViaGmailSmtp(trimmedEmail, otpCode, effectiveGmailSender, effectiveGmailPass)
                 channelDispatched = true
-                Log.i(TAG, "Successfully dispatched OTP via Resend API to $trimmedEmail")
+                Log.i(TAG, "Successfully dispatched OTP via Gmail SMTP to $trimmedEmail")
             } catch (e: Exception) {
-                Log.e(TAG, "Resend email dispatch failed: ${e.message}", e)
-                errors.add(e.message ?: "Resend API error")
+                Log.e(TAG, "Gmail SMTP email dispatch failed: ${e.message}", e)
+                errors.add("Gmail SMTP: ${e.message}")
             }
         }
 
-        // 2. Dispatch via Brevo REST API if configured and not yet dispatched
+        val effectiveBrevoKey = EmailOtpConfig.BREVO_API_KEY.trim()
+
+        // 2. Dispatch via Brevo REST API if configured (fallback)
         if (!channelDispatched && effectiveBrevoKey.isNotBlank()) {
-            try {
-                sendViaBrevo(trimmedEmail, otpCode, effectiveBrevoKey)
-                channelDispatched = true
-                Log.i(TAG, "Successfully dispatched OTP via Brevo API to $trimmedEmail")
-            } catch (e: Exception) {
-                Log.e(TAG, "Brevo email dispatch failed: ${e.message}", e)
-                errors.add(e.message ?: "Brevo API error")
+            if (effectiveBrevoKey.startsWith("xsmtpsib-")) {
+                val msg = "Brevo Error: You entered an SMTP Key ('xsmtpsib-...'). Brevo REST API requires an API Key starting with 'xkeysib-...'. In your Brevo dashboard, go to 'SMTP & API' -> 'API Keys' tab -> 'Generate a new API key'."
+                Log.e(TAG, msg)
+                errors.add(msg)
+            } else {
+                try {
+                    sendViaBrevo(trimmedEmail, otpCode, effectiveBrevoKey)
+                    channelDispatched = true
+                    Log.i(TAG, "Successfully dispatched OTP via Brevo API to $trimmedEmail")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Brevo email dispatch failed: ${e.message}", e)
+                    errors.add(e.message ?: "Brevo API error")
+                }
             }
         }
 
-        // 3. Dispatch via Custom Webhook if configured
+        // 2. Dispatch via Custom Webhook if configured
         if (!channelDispatched && EmailOtpConfig.CUSTOM_WEBHOOK_URL.isNotBlank()) {
             try {
                 sendViaWebhook(trimmedEmail, otpCode)
@@ -139,9 +139,9 @@ class EmailOtpService(private val context: Context? = null) {
             }
         }
 
-        // 4. Dispatch via Firebase Trigger Email extension ('mail' Firestore collection) ONLY if not already dispatched via direct API
+        // 3. Dispatch via Firebase Trigger Email extension ('mail' Firestore collection) if Brevo not configured/dispatched
         val fs = firestore
-        if (!channelDispatched && fs != null && effectiveResendKey.isBlank() && effectiveBrevoKey.isBlank()) {
+        if (!channelDispatched && fs != null && effectiveBrevoKey.isBlank()) {
             try {
                 val mailDoc = hashMapOf(
                     "to" to listOf(trimmedEmail),
@@ -188,6 +188,7 @@ class EmailOtpService(private val context: Context? = null) {
             } else {
                 "Unable to dispatch verification email. Please check your internet connection or email configuration."
             }
+            Log.e(TAG, "Email OTP dispatch failed for $trimmedEmail: $errorMsg")
             return@withContext SendResult.Error(errorMsg)
         }
 
@@ -268,7 +269,15 @@ class EmailOtpService(private val context: Context? = null) {
         }
     }
 
-    private fun buildEmailHtml(otp: String): String {
+    private fun buildEmailHtml(otp: String, hasLogo: Boolean = true): String {
+        val logoHtml = if (hasLogo) {
+            """
+            <div style="text-align: center; margin-bottom: 14px;">
+                <img src="cid:app_logo" alt="Government Emblem" width="76" height="76" style="display: block; margin: 0 auto; width: 76px; height: 76px; border: 0; outline: none; text-decoration: none;" />
+            </div>
+            """.trimIndent()
+        } else ""
+
         return """
             <!DOCTYPE html>
             <html>
@@ -279,7 +288,8 @@ class EmailOtpService(private val context: Context? = null) {
             <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f7fa; margin: 0; padding: 24px;">
                 <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 540px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                     <tr>
-                        <td style="background-color: #0A2342; padding: 24px; text-align: center;">
+                        <td style="background-color: #0A2342; padding: 28px 24px; text-align: center;">
+                            $logoHtml
                             <h2 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">Government of Maharashtra</h2>
                             <p style="color: #E58325; margin: 6px 0 0 0; font-size: 13px; font-weight: 600;">Narcotics Enforcement Unit · Field Digital Companion</p>
                         </td>
@@ -322,11 +332,15 @@ class EmailOtpService(private val context: Context? = null) {
         val url = URL("https://api.brevo.com/v3/smtp/email")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
+        conn.setRequestProperty("Accept", "application/json")
         conn.setRequestProperty("Content-Type", "application/json")
         conn.setRequestProperty("api-key", apiKey)
         conn.doOutput = true
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
+
+        val logoBytes = getLogoBytes()
+        val hasLogo = logoBytes != null
 
         val payload = JSONObject().apply {
             put("sender", JSONObject().apply {
@@ -337,51 +351,40 @@ class EmailOtpService(private val context: Context? = null) {
                 put(JSONObject().apply { put("email", toEmail) })
             })
             put("subject", "Official Verification Code: $otp - Maharashtra Narcotics Enforcement")
-            put("htmlContent", buildEmailHtml(otp))
-        }
-
-        OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val rawErr = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-            val parsedMsg = runCatching {
-                JSONObject(rawErr).optString("message", rawErr)
-            }.getOrDefault(rawErr)
-            throw RuntimeException("Brevo ($code): $parsedMsg")
-        }
-    }
-
-    private fun sendViaResend(toEmail: String, otp: String, apiKey: String = EmailOtpConfig.RESEND_API_KEY) {
-        val url = URL("https://api.resend.com/emails")
-        val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("Authorization", "Bearer $apiKey")
-        conn.doOutput = true
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-
-        val payload = JSONObject().apply {
-            put("from", "${EmailOtpConfig.SENDER_NAME} <${EmailOtpConfig.RESEND_SENDER_EMAIL}>")
-            put("to", JSONArray().apply { put(toEmail) })
-            put("subject", "Official Verification Code: $otp - Maharashtra Narcotics Enforcement")
-            put("html", buildEmailHtml(otp))
-        }
-
-        OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val rawErr = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-            val parsedMsg = runCatching {
-                JSONObject(rawErr).optString("message", rawErr)
-            }.getOrDefault(rawErr)
-
-            val cleanMsg = if (code == 403 && parsedMsg.contains("You can only send testing emails", ignoreCase = true)) {
-                "Resend Sandbox Restriction: Resend's free tier only delivers testing emails to your registered Resend email (rushikeshpingle8877@gmail.com). To test, please enter rushikeshpingle8877@gmail.com, or verify a domain at resend.com/domains."
-            } else {
-                "Resend ($code): $parsedMsg"
+            put("htmlContent", buildEmailHtml(otp, hasLogo))
+            if (logoBytes != null) {
+                put("inlineImage", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("content", toBase64(logoBytes))
+                        put("name", "app_logo")
+                    })
+                })
             }
-            throw RuntimeException(cleanMsg)
+        }
+
+        conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+            it.write(payload.toString())
+            it.flush()
+        }
+
+        val code = conn.responseCode
+        if (code in 200..299) {
+            val responseBody = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            Log.i(TAG, "Brevo email dispatched successfully (HTTP $code): $responseBody")
+        } else {
+            val rawErr = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "HTTP $code"
+            val parsedMsg = runCatching {
+                JSONObject(rawErr).optString("message", rawErr)
+            }.getOrDefault(rawErr)
+            val friendlyMsg = when {
+                code == 401 -> "Brevo (401 Unauthorized): Invalid API key or key type. Make sure you use an API Key ('xkeysib-...') from Brevo -> SMTP & API -> API Keys tab (not an SMTP key)."
+                parsedMsg.contains("sender", ignoreCase = true) || parsedMsg.contains("not validated", ignoreCase = true) ->
+                    "Brevo Error: Sender '${EmailOtpConfig.BREVO_SENDER_EMAIL}' is not verified. Please verify this email in Brevo under Senders & IP."
+                code == 402 || code == 429 || parsedMsg.contains("quota", ignoreCase = true) || parsedMsg.contains("rate", ignoreCase = true) || parsedMsg.contains("limit", ignoreCase = true) ->
+                    "Brevo Rate Limit ($code): Brevo throttled rapid email dispatch. Please wait 1-2 minutes before resending."
+                else -> "Brevo ($code): $parsedMsg"
+            }
+            throw RuntimeException(friendlyMsg)
         }
     }
 
@@ -391,8 +394,8 @@ class EmailOtpService(private val context: Context? = null) {
         conn.requestMethod = "POST"
         conn.setRequestProperty("Content-Type", "application/json")
         conn.doOutput = true
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
 
         val payload = JSONObject().apply {
             put("to", toEmail)
@@ -401,12 +404,169 @@ class EmailOtpService(private val context: Context? = null) {
             put("html", buildEmailHtml(otp))
         }
 
-        OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
+        conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+            it.write(payload.toString())
+            it.flush()
+        }
+
         val code = conn.responseCode
         if (code !in 200..299) {
             throw RuntimeException("Webhook responded with status code $code")
         }
     }
+
+    private fun sendViaGmailSmtp(
+        toEmail: String,
+        otp: String,
+        senderEmail: String = EmailOtpConfig.GMAIL_SENDER_EMAIL.trim(),
+        appPassword: String = EmailOtpConfig.GMAIL_APP_PASSWORD.trim().replace(" ", ""),
+    ) {
+        val socketFactory = SSLSocketFactory.getDefault()
+        val socket = (socketFactory.createSocket() as SSLSocket).apply {
+            connect(InetSocketAddress("smtp.gmail.com", 465), 15000)
+            soTimeout = 15000
+            startHandshake()
+        }
+
+        try {
+            val reader = socket.inputStream.bufferedReader(Charsets.UTF_8)
+            val writer = socket.outputStream.bufferedWriter(Charsets.UTF_8)
+
+            fun readResponse(): String {
+                var line = reader.readLine() ?: throw IOException("Gmail SMTP connection closed unexpectedly.")
+                val sb = StringBuilder(line)
+                while (line.length >= 4 && line[3] == '-') {
+                    line = reader.readLine() ?: break
+                    sb.append("\n").append(line)
+                }
+                return sb.toString()
+            }
+
+            fun exec(command: String, expectedPrefix: String? = null): String {
+                writer.write("$command\r\n")
+                writer.flush()
+                val response = readResponse()
+                if (expectedPrefix != null && !response.startsWith(expectedPrefix)) {
+                    throw IOException("Gmail SMTP command error ($command): $response")
+                }
+                return response
+            }
+
+            val banner = readResponse()
+            if (!banner.startsWith("220")) {
+                throw IOException("Unexpected Gmail SMTP greeting: $banner")
+            }
+
+            exec("EHLO localhost", "250")
+            exec("AUTH LOGIN", "334")
+
+            val userB64 = toBase64(senderEmail)
+            val passB64 = toBase64(appPassword)
+
+            exec(userB64, "334")
+            val authResp = exec(passB64)
+            if (!authResp.startsWith("235")) {
+                throw IOException("Gmail SMTP authentication failed: $authResp")
+            }
+
+            exec("MAIL FROM:<$senderEmail>", "250")
+            exec("RCPT TO:<$toEmail>", "250")
+            exec("DATA", "354")
+
+            val subject = "Official Verification Code: $otp - Maharashtra Narcotics Enforcement"
+            val logoBytes = getLogoBytes()
+            val hasLogo = logoBytes != null
+            val htmlContent = buildEmailHtml(otp, hasLogo)
+            val base64Html = toBase64(htmlContent)
+
+            val emailData = if (logoBytes != null) {
+                val boundary = "----=_Part_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().replace("-", "")}"
+                val base64Logo = toBase64(logoBytes)
+                buildString {
+                    append("From: ${EmailOtpConfig.SENDER_NAME} <$senderEmail>\r\n")
+                    append("To: <$toEmail>\r\n")
+                    append("Subject: $subject\r\n")
+                    append("MIME-Version: 1.0\r\n")
+                    append("Content-Type: multipart/related; boundary=\"$boundary\"\r\n")
+                    append("\r\n")
+                    // Part 1: HTML Body
+                    append("--$boundary\r\n")
+                    append("Content-Type: text/html; charset=UTF-8\r\n")
+                    append("Content-Transfer-Encoding: base64\r\n")
+                    append("\r\n")
+                    base64Html.chunked(76).forEach { line ->
+                        append(line).append("\r\n")
+                    }
+                    append("\r\n")
+                    // Part 2: Inline App Logo (CID: app_logo)
+                    append("--$boundary\r\n")
+                    append("Content-Type: image/png; name=\"app_logo.png\"\r\n")
+                    append("Content-Transfer-Encoding: base64\r\n")
+                    append("Content-ID: <app_logo>\r\n")
+                    append("Content-Disposition: inline; filename=\"app_logo.png\"\r\n")
+                    append("\r\n")
+                    base64Logo.chunked(76).forEach { line ->
+                        append(line).append("\r\n")
+                    }
+                    append("\r\n")
+                    append("--$boundary--\r\n")
+                    append(".\r\n")
+                }
+            } else {
+                buildString {
+                    append("From: ${EmailOtpConfig.SENDER_NAME} <$senderEmail>\r\n")
+                    append("To: <$toEmail>\r\n")
+                    append("Subject: $subject\r\n")
+                    append("MIME-Version: 1.0\r\n")
+                    append("Content-Type: text/html; charset=UTF-8\r\n")
+                    append("Content-Transfer-Encoding: base64\r\n")
+                    append("\r\n")
+                    base64Html.chunked(76).forEach { line ->
+                        append(line).append("\r\n")
+                    }
+                    append("\r\n.\r\n")
+                }
+            }
+
+            writer.write(emailData)
+            writer.flush()
+
+            val sendResp = readResponse()
+            if (!sendResp.startsWith("250")) {
+                throw IOException("Failed sending verification message: $sendResp")
+            }
+
+            try {
+                exec("QUIT", "221")
+            } catch (_: Exception) {
+            }
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun getLogoBytes(): ByteArray? {
+        return runCatching {
+            context?.resources?.openRawResource(com.sih.drugtestclassifier.R.drawable.app_logo)?.use {
+                it.readBytes()
+            }
+        }.getOrNull() ?: runCatching {
+            val file = java.io.File("app/src/main/res/drawable/app_logo.png")
+            if (file.exists()) file.readBytes() else null
+        }.getOrNull()
+    }
+
+    private fun toBase64(bytes: ByteArray): String {
+        return runCatching {
+            val clazz = Class.forName("android.util.Base64")
+            val method = clazz.getMethod("encodeToString", ByteArray::class.java, Int::class.javaPrimitiveType)
+            method.invoke(null, bytes, 2 /* android.util.Base64.NO_WRAP */) as String
+        }.getOrElse {
+            java.util.Base64.getEncoder().encodeToString(bytes)
+        }
+    }
+
+    private fun toBase64(str: String): String = toBase64(str.toByteArray(Charsets.UTF_8))
 
     companion object {
         private const val TAG = "EmailOtpService"

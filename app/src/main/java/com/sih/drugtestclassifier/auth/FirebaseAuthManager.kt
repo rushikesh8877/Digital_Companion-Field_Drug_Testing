@@ -131,8 +131,7 @@ class FirebaseAuthManager(private val context: Context) {
             val localConflict = db.officerDao().getOfficerByDeptAndBadge(normDept, normBadge)
             if (localConflict != null && localConflict.uid != currentUid) {
                 return@withContext OfficerDepartmentVerifier.GrantValidationResult.Denied(
-                    "Officer ID '${badgeId.trim()}' is already registered in '$department' (held by ${localConflict.name}). " +
-                        "Each officer must provide a unique ID in their department.",
+                    "Officer ID '${badgeId.trim()}' is already registered in this department.",
                 )
             }
         } catch (_: Exception) {
@@ -146,11 +145,9 @@ class FirebaseAuthManager(private val context: Context) {
                 val doc = fs.collection(OfficerDepartmentVerifier.COLLECTION_DEPT_OFFICERS).document(key).get().await()
                 if (doc.exists()) {
                     val docUid = doc.getString("uid")
-                    val existingName = doc.getString("name") ?: "another officer"
                     if (docUid != null && docUid != currentUid) {
                         return@withContext OfficerDepartmentVerifier.GrantValidationResult.Denied(
-                            "Officer ID '${badgeId.trim()}' is already registered in '$department' (held by $existingName). " +
-                                "Each officer must provide a unique ID in their department.",
+                            "Officer ID '${badgeId.trim()}' is already registered in this department.",
                         )
                     }
                 }

@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
@@ -34,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import app.ui.data.DemoTestViewModel
+import com.sih.drugtestclassifier.auth.EmailOtpConfig
 import com.sih.drugtestclassifier.auth.EmailOtpService
 import com.sih.drugtestclassifier.auth.FirebaseAuthManager
 import com.sih.drugtestclassifier.auth.OfficerDepartmentVerifier
@@ -64,14 +67,75 @@ fun LoginScreen(
     var signInPassword by remember { mutableStateOf("") }
     var signInPasswordVisible by remember { mutableStateOf(false) }
 
-    // Official Registration fields (default to empty so example background hints are displayed)
+    // States and Districts mapping
+    val statesAndDistrictsMap = remember {
+        mapOf(
+            "Maharashtra" to listOf(
+                "Nashik", "Mumbai City", "Mumbai Suburban", "Pune", "Thane", "Nagpur",
+                "Chhatrapati Sambhajinagar (Aurangabad)", "Ahilyanagar (Ahmednagar)", "Amravati",
+                "Akola", "Beed", "Bhandara", "Buldhana", "Chandrapur", "Dhule", "Gadchiroli",
+                "Gondia", "Hingoli", "Jalgaon", "Jalna", "Kolhapur", "Latur", "Nanded",
+                "Nandurbar", "Palghar", "Parbhani", "Raigad", "Ratnagiri", "Sangli", "Satara",
+                "Sindhudurg", "Solapur", "Wardha", "Washim", "Yavatmal",
+            ),
+            "Goa" to listOf("North Goa", "South Goa"),
+            "Gujarat" to listOf(
+                "Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar",
+                "Gandhinagar", "Junagadh", "Anand", "Bharuch", "Kutch", "Mehsana", "Patan", "Valsad",
+            ),
+            "Karnataka" to listOf(
+                "Bengaluru Urban", "Bengaluru Rural", "Mysuru", "Mangaluru (Dakshina Kannada)",
+                "Hubballi-Dharwad", "Belagavi", "Kalaburagi", "Ballari", "Shivamogga", "Tumakuru", "Udupi",
+            ),
+            "Madhya Pradesh" to listOf(
+                "Bhopal", "Indore", "Gwalior", "Jabalpur", "Ujjain", "Sagar", "Satna", "Rewa", "Ratlam", "Vidisha",
+            ),
+            "Delhi (UT)" to listOf(
+                "New Delhi", "Central Delhi", "East Delhi", "North Delhi", "South Delhi", "West Delhi",
+            ),
+            "Telangana" to listOf("Hyderabad", "Rangareddy", "Medchal-Malkajgiri", "Warangal", "Nizamabad", "Karimnagar"),
+            "Tamil Nadu" to listOf("Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Tirunelveli"),
+            "Uttar Pradesh" to listOf("Lucknow", "Kanpur", "Varanasi", "Agra", "Gautam Buddha Nagar (Noida)", "Ghaziabad", "Prayagraj"),
+            "West Bengal" to listOf("Kolkata", "Howrah", "North 24 Parganas", "South 24 Parganas", "Darjeeling", "Siliguri"),
+        )
+    }
+
+    var selectedState by remember { mutableStateOf("Maharashtra") }
+    var regDistrict by remember { mutableStateOf("Nashik") }
+    var stateDropdownExpanded by remember { mutableStateOf(false) }
+    var districtDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Preset Departments list (Departments handling narcotics, field drug testing, and interdiction operations)
+    val presetDepartments = remember {
+        listOf(
+            "Narcotics Enforcement Unit",
+            "Narcotics Control Bureau (NCB)",
+            "Anti-Narcotics Task Force (ANTF)",
+            "Anti-Narcotics Cell (ANC)",
+            "State Police Department",
+            "Crime Branch / Special Cell",
+            "State Crime Investigation Department (CID)",
+            "State Excise & Prohibition Department",
+            "Directorate of Revenue Intelligence (DRI)",
+            "Central Bureau of Narcotics (CBN)",
+            "Forensic Science Laboratory (FSL)",
+            "Customs & Border Control",
+            "Railway Protection Force (RPF)",
+            "Special Task Force (STF)",
+            "Other (Type manually)",
+        )
+    }
+    var selectedDepartmentPreset by remember { mutableStateOf("Narcotics Enforcement Unit") }
+    var customDepartmentName by remember { mutableStateOf("") }
+    var departmentDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Official Registration fields
     var regOfficerId by remember { mutableStateOf("") }
     var regOfficerName by remember { mutableStateOf("") }
-    var regDepartment by remember { mutableStateOf("") }
+    var regDepartment by remember { mutableStateOf("Narcotics Enforcement Unit") }
     var regGender by remember { mutableStateOf("Male") }
     var regRank by remember { mutableStateOf("Inspector") }
     var regServiceNumber by remember { mutableStateOf("") }
-    var regDistrict by remember { mutableStateOf("") }
     var regPhone by remember { mutableStateOf("") }
     var regEmail by remember { mutableStateOf("") }
     var regPassword by remember { mutableStateOf("") }
@@ -94,6 +158,7 @@ fun LoginScreen(
     // Real-time departmental uniqueness validation
     var availabilityStatus by remember { mutableStateOf<String?>(null) }
     var isIdTaken by remember { mutableStateOf(false) }
+    var showDuplicateOfficerPopup by remember { mutableStateOf(false) }
 
     // UI Feedback state
     var isLoading by remember { mutableStateOf(false) }
@@ -113,23 +178,27 @@ fun LoginScreen(
         }
     }
 
-    // Check departmental uniqueness whenever ID or department is modified during registration
-    LaunchedEffect(regOfficerId, regDepartment, selectedTab) {
-        if (selectedTab == 1 && regOfficerId.isNotBlank() && regDepartment.isNotBlank()) {
-            val res = viewModel.checkOfficerIdAvailability(regDepartment, regOfficerId)
+    // Check departmental & district uniqueness whenever ID, department, or district is modified during registration
+    LaunchedEffect(regOfficerId, regDepartment, regDistrict, selectedTab) {
+        val effectiveDeptBoundary = if (regDistrict.isNotBlank()) "$regDepartment - $regDistrict" else regDepartment
+        if (selectedTab == 1 && regOfficerId.isNotBlank() && effectiveDeptBoundary.isNotBlank()) {
+            val res = viewModel.checkOfficerIdAvailability(effectiveDeptBoundary, regOfficerId)
             when (res) {
                 is OfficerDepartmentVerifier.GrantValidationResult.Denied -> {
-                    availabilityStatus = res.reason
+                    availabilityStatus = "Officer ID is already registered in this department."
                     isIdTaken = true
+                    showDuplicateOfficerPopup = true
                 }
                 is OfficerDepartmentVerifier.GrantValidationResult.Granted -> {
-                    availabilityStatus = "Unique Officer ID available for this department"
+                    availabilityStatus = "Officer ID is available."
                     isIdTaken = false
+                    showDuplicateOfficerPopup = false
                 }
             }
         } else {
             availabilityStatus = null
             isIdTaken = false
+            showDuplicateOfficerPopup = false
         }
     }
 
@@ -432,7 +501,7 @@ fun LoginScreen(
                                         regOfficerId = it
                                         errorMessage = null
                                     },
-                                    placeholder = { Text("e.g. OFFICER-7421", color = Color(0xFF94A3B8)) },
+                                    placeholder = { Text("OFFICER-7421", color = Color(0xFF94A3B8)) },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(8.dp),
                                     singleLine = true,
@@ -478,7 +547,7 @@ fun LoginScreen(
                                         regOfficerName = it
                                         errorMessage = null
                                     },
-                                    placeholder = { Text("e.g. Insp. R. Sharma", color = Color(0xFF94A3B8)) },
+                                    placeholder = { Text("Insp. R. Sharma", color = Color(0xFF94A3B8)) },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(8.dp),
                                     singleLine = true,
@@ -663,67 +732,76 @@ fun LoginScreen(
                                 }
                             }
 
-                            // 5. Department / Unit Field
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = "Department / Unit",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E293B),
-                                )
-                                OutlinedTextField(
-                                    value = regDepartment,
-                                    onValueChange = {
-                                        regDepartment = it
-                                        errorMessage = null
-                                    },
-                                    placeholder = { Text("e.g. Narcotics Enforcement Unit - Nashik", color = Color(0xFF94A3B8)) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp),
-                                    singleLine = true,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = GovNavy,
-                                        unfocusedBorderColor = GovBorder,
-                                    ),
-                                )
-                                Text(
-                                    text = "The boundary within which your Officer ID is verified unique.",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF64748B),
-                                )
-                            }
-
-                            // 6. ESSENTIAL OFFICIAL DATA: Police ID & District (Aligned in a clean horizontal line)
+                            // 5. STATE & DISTRICT SELECTION (Filtered Districts by Selected State)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.Top,
                             ) {
+                                // State Dropdown Picker
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(
-                                        text = "Police ID",
+                                        text = "State",
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF1E293B),
                                         maxLines = 1,
                                     )
-                                    OutlinedTextField(
-                                        value = regServiceNumber,
-                                        onValueChange = { regServiceNumber = it },
-                                        placeholder = { Text("e.g. MH-POL-7421", color = Color(0xFF94A3B8), fontSize = 13.sp) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp),
-                                        singleLine = true,
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = GovNavy,
-                                            unfocusedBorderColor = GovBorder,
-                                        ),
-                                    )
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedTextField(
+                                            value = selectedState,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { stateDropdownExpanded = !stateDropdownExpanded },
+                                            shape = RoundedCornerShape(8.dp),
+                                            trailingIcon = {
+                                                IconButton(onClick = { stateDropdownExpanded = !stateDropdownExpanded }) {
+                                                    Icon(
+                                                        imageVector = if (stateDropdownExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                                                        contentDescription = "Select State",
+                                                    )
+                                                }
+                                            },
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = GovNavy,
+                                                unfocusedBorderColor = GovBorder,
+                                            ),
+                                        )
+                                        DropdownMenu(
+                                            expanded = stateDropdownExpanded,
+                                            onDismissRequest = { stateDropdownExpanded = false },
+                                            modifier = Modifier.fillMaxWidth(0.45f),
+                                        ) {
+                                            statesAndDistrictsMap.keys.forEach { stateName ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = stateName,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = if (stateName == selectedState) FontWeight.Bold else FontWeight.Normal,
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        selectedState = stateName
+                                                        stateDropdownExpanded = false
+                                                        val districts = statesAndDistrictsMap[stateName].orEmpty()
+                                                        if (districts.isNotEmpty() && !districts.contains(regDistrict)) {
+                                                            regDistrict = districts.first()
+                                                        }
+                                                        errorMessage = null
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
 
+                                // District Dropdown Picker (Filtered to selected State)
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -735,11 +813,126 @@ fun LoginScreen(
                                         color = Color(0xFF1E293B),
                                         maxLines = 1,
                                     )
+                                    val currentDistricts = statesAndDistrictsMap[selectedState] ?: listOf("Nashik")
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedTextField(
+                                            value = regDistrict,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { districtDropdownExpanded = !districtDropdownExpanded },
+                                            shape = RoundedCornerShape(8.dp),
+                                            trailingIcon = {
+                                                IconButton(onClick = { districtDropdownExpanded = !districtDropdownExpanded }) {
+                                                    Icon(
+                                                        imageVector = if (districtDropdownExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                                                        contentDescription = "Select District",
+                                                    )
+                                                }
+                                            },
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = GovNavy,
+                                                unfocusedBorderColor = GovBorder,
+                                            ),
+                                        )
+                                        DropdownMenu(
+                                            expanded = districtDropdownExpanded,
+                                            onDismissRequest = { districtDropdownExpanded = false },
+                                            modifier = Modifier.fillMaxWidth(0.45f),
+                                        ) {
+                                            currentDistricts.forEach { distName ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = distName,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = if (distName == regDistrict) FontWeight.Bold else FontWeight.Normal,
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        regDistrict = distName
+                                                        districtDropdownExpanded = false
+                                                        errorMessage = null
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 6. Department / Unit Dropdown Picker with Custom Option
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Department / Unit",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B),
+                                )
+                                Box(modifier = Modifier.fillMaxWidth()) {
                                     OutlinedTextField(
-                                        value = regDistrict,
-                                        onValueChange = { regDistrict = it },
-                                        placeholder = { Text("e.g. Nashik City", color = Color(0xFF94A3B8), fontSize = 13.sp) },
-                                        modifier = Modifier.fillMaxWidth(),
+                                        value = selectedDepartmentPreset,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { departmentDropdownExpanded = !departmentDropdownExpanded },
+                                        shape = RoundedCornerShape(8.dp),
+                                        trailingIcon = {
+                                            IconButton(onClick = { departmentDropdownExpanded = !departmentDropdownExpanded }) {
+                                                Icon(
+                                                    imageVector = if (departmentDropdownExpanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                                                    contentDescription = "Select Department",
+                                                )
+                                            }
+                                        },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = GovNavy,
+                                            unfocusedBorderColor = GovBorder,
+                                        ),
+                                    )
+                                    DropdownMenu(
+                                        expanded = departmentDropdownExpanded,
+                                        onDismissRequest = { departmentDropdownExpanded = false },
+                                        modifier = Modifier.fillMaxWidth(0.85f),
+                                    ) {
+                                        presetDepartments.forEach { dept ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = dept,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = if (dept == selectedDepartmentPreset) FontWeight.Bold else FontWeight.Normal,
+                                                    )
+                                                },
+                                                onClick = {
+                                                    selectedDepartmentPreset = dept
+                                                    departmentDropdownExpanded = false
+                                                    if (dept != "Other (Type manually)") {
+                                                        regDepartment = dept
+                                                    } else {
+                                                        regDepartment = customDepartmentName
+                                                    }
+                                                    errorMessage = null
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (selectedDepartmentPreset == "Other (Type manually)") {
+                                    OutlinedTextField(
+                                        value = customDepartmentName,
+                                        onValueChange = {
+                                            customDepartmentName = it
+                                            regDepartment = it
+                                            errorMessage = null
+                                        },
+                                        placeholder = { Text("Enter Department Name", color = Color(0xFF94A3B8)) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
                                         shape = RoundedCornerShape(8.dp),
                                         singleLine = true,
                                         colors = OutlinedTextFieldDefaults.colors(
@@ -748,6 +941,34 @@ fun LoginScreen(
                                         ),
                                     )
                                 }
+
+                                Text(
+                                    text = "Unique Officer ID boundary enforced within $regDepartment ($regDistrict).",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                )
+                            }
+
+                            // 7. Official Police ID Number
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Police ID / Service Number",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B),
+                                )
+                                OutlinedTextField(
+                                    value = regServiceNumber,
+                                    onValueChange = { regServiceNumber = it },
+                                    placeholder = { Text("MH-POL-7421", color = Color(0xFF94A3B8)) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = GovNavy,
+                                        unfocusedBorderColor = GovBorder,
+                                    ),
+                                )
                             }
 
                             // 7. Official Phone Number
@@ -761,7 +982,7 @@ fun LoginScreen(
                                 OutlinedTextField(
                                     value = regPhone,
                                     onValueChange = { regPhone = it },
-                                    placeholder = { Text("e.g. +91 98230 44521", color = Color(0xFF94A3B8)) },
+                                    placeholder = { Text("+91 98230 44521", color = Color(0xFF94A3B8)) },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(8.dp),
                                     singleLine = true,
@@ -796,7 +1017,7 @@ fun LoginScreen(
                                             isOtpDispatched = false
                                             showOtpDialog = false
                                         },
-                                        placeholder = { Text("e.g. officer@narcotics.gov.in", color = Color(0xFF94A3B8)) },
+                                        placeholder = { Text("officer@narcotics.gov.in", color = Color(0xFF94A3B8)) },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(8.dp),
                                         singleLine = true,
@@ -874,7 +1095,7 @@ fun LoginScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text(
-                                            text = emailVerificationError!!,
+                                            text = toShortUserFriendlyError(emailVerificationError),
                                             color = Color(0xFFB91C1C),
                                             fontSize = 12.sp,
                                             lineHeight = 16.sp,
@@ -919,6 +1140,7 @@ fun LoginScreen(
                                                 color = Color(0xFF334155),
                                             )
 
+
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -932,7 +1154,7 @@ fun LoginScreen(
                                                             otpError = null
                                                         }
                                                     },
-                                                    placeholder = { Text("e.g. 123456") },
+                                                    placeholder = { Text("123456") },
                                                     modifier = Modifier.weight(1f),
                                                     shape = RoundedCornerShape(8.dp),
                                                     singleLine = true,
@@ -987,7 +1209,7 @@ fun LoginScreen(
 
                                             if (otpError != null) {
                                                 Text(
-                                                    text = otpError!!,
+                                                    text = toShortUserFriendlyError(otpError),
                                                     color = MaterialTheme.colorScheme.error,
                                                     fontSize = 12.sp,
                                                 )
@@ -1175,7 +1397,7 @@ fun LoginScreen(
                                         return@Button
                                     }
                                     if (isIdTaken) {
-                                        errorMessage = availabilityStatus ?: "Officer ID is already taken in this department."
+                                        errorMessage = availabilityStatus ?: "Officer ID is already registered in this department."
                                         return@Button
                                     }
 
@@ -1224,6 +1446,110 @@ fun LoginScreen(
                     }
                 }
 
+                // Duplicate Officer ID Popup Modal
+                if (showDuplicateOfficerPopup && isIdTaken) {
+                    AlertDialog(
+                        onDismissRequest = { showDuplicateOfficerPopup = false },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = Color.White,
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFFEE2E2),
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Warning,
+                                            contentDescription = "Alert",
+                                            tint = Color(0xFFDC2626),
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    "Officer ID Registered",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = GovNavy,
+                                )
+                            }
+                        },
+                        text = {
+                            Text(
+                                text = "Officer ID is already registered in this department.",
+                                fontSize = 14.sp,
+                                color = Color(0xFF334155),
+                                lineHeight = 20.sp,
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = { showDuplicateOfficerPopup = false },
+                                colors = ButtonDefaults.buttonColors(containerColor = GovNavy),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("OK", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                    )
+                }
+
+                // Short, Easy-to-Understand Error Popup Modal
+                if (errorMessage != null) {
+                    AlertDialog(
+                        onDismissRequest = { errorMessage = null },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = Color.White,
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFFEE2E2),
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Warning,
+                                            contentDescription = "Alert",
+                                            tint = Color(0xFFDC2626),
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    "Notice",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = GovNavy,
+                                )
+                            }
+                        },
+                        text = {
+                            Text(
+                                text = toShortUserFriendlyError(errorMessage),
+                                fontSize = 14.sp,
+                                color = Color(0xFF334155),
+                                lineHeight = 20.sp,
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = { errorMessage = null },
+                                colors = ButtonDefaults.buttonColors(containerColor = GovNavy),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("OK", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                    )
+                }
+
                 // Error Feedback Card
                 if (errorMessage != null) {
                     Surface(
@@ -1233,7 +1559,7 @@ fun LoginScreen(
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
                     ) {
                         Text(
-                            text = errorMessage!!,
+                            text = toShortUserFriendlyError(errorMessage),
                             color = Color(0xFFB91C1C),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
@@ -1339,6 +1665,7 @@ fun LoginScreen(
                             color = Color(0xFF64748B),
                         )
 
+
                         OutlinedTextField(
                             value = otpInput,
                             onValueChange = {
@@ -1348,7 +1675,7 @@ fun LoginScreen(
                                 }
                             },
                             label = { Text("Enter 6-Digit Code") },
-                            placeholder = { Text("e.g. 123456") },
+                            placeholder = { Text("123456") },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             singleLine = true,
@@ -1360,7 +1687,7 @@ fun LoginScreen(
 
                         if (otpError != null) {
                             Text(
-                                text = otpError!!,
+                                text = toShortUserFriendlyError(otpError),
                                 color = MaterialTheme.colorScheme.error,
                                 fontSize = 12.sp,
                             )
@@ -1454,6 +1781,114 @@ fun LoginScreen(
                     }
                 },
             )
+        }
+    }
+}
+
+/**
+ * Converts raw technical error strings into short, easy-to-understand user messages.
+ */
+private fun toShortUserFriendlyError(rawMessage: String?): String {
+    if (rawMessage.isNullOrBlank()) return "An unexpected error occurred. Please try again."
+    val msg = rawMessage.trim()
+    val lower = msg.lowercase()
+
+    return when {
+        // Network / Connectivity Errors
+        lower.contains("unable to resolve host") ||
+            lower.contains("no address associated") ||
+            lower.contains("unknownhostexception") ||
+            lower.contains("sockettimeoutexception") ||
+            lower.contains("connectexception") ||
+            lower.contains("network") ||
+            lower.contains("internet") ||
+            lower.contains("offline") ||
+            lower.contains("failed to connect") ||
+            lower.contains("check your internet") ->
+            "No internet connection. Please check your network and try again."
+
+        // Sign In Credentials
+        lower.contains("invalid-credential") ||
+            lower.contains("invalid_login_credentials") ||
+            lower.contains("invalid credentials") ||
+            lower.contains("wrong password") ||
+            lower.contains("invalid password") ->
+            "Incorrect email or password. Please try again."
+
+        lower.contains("no officer account found") ||
+            lower.contains("user-not-found") ||
+            lower.contains("account not found") ->
+            "No officer account found with this email address."
+
+        // Registration & Account Conflicts
+        lower.contains("account already exists") ||
+            lower.contains("usercollision") ||
+            lower.contains("email-already-in-use") ->
+            "An account with this email address already exists."
+
+        lower.contains("password is too weak") ||
+            lower.contains("weakpassword") ||
+            lower.contains("at least 6 characters") ->
+            "Password is too weak. Please use at least 6 characters."
+
+        lower.contains("email address format is invalid") ||
+            lower.contains("invalid email") ||
+            lower.contains("invalid-email") ->
+            "Please enter a valid official email address."
+
+        // Officer Badge ID Conflicts
+        lower.contains("already registered") ||
+            lower.contains("already taken") ||
+            lower.contains("id is already taken") ->
+            "Officer ID is already registered in this department."
+
+        // Rate Limiting
+        lower.contains("too-many-requests") ||
+            lower.contains("rate limit") ||
+            lower.contains("rate-limited") ||
+            lower.contains("throttled") ||
+            lower.contains("quota") ||
+            lower.contains("maximum attempts exceeded") ->
+            "Too many attempts. Please wait 1-2 minutes and try again."
+
+        // OTP Code Validation
+        lower.contains("invalid verification code") ||
+            lower.contains("invalid code") ||
+            lower.contains("incorrect code") ->
+            "Invalid verification code. Please check your email and try again."
+
+        lower.contains("expired") ->
+            "Verification code has expired. Please request a new code."
+
+        // Form Validation
+        lower.contains("email and password are required") ||
+            lower.contains("please enter officer email and password") ||
+            lower.contains("fill in all mandatory") ||
+            lower.contains("both email and password") ->
+            "Please fill in all required credentials."
+
+        lower.contains("passwords do not match") ->
+            "Passwords do not match."
+
+        lower.contains("complete official email verification") ||
+            lower.contains("verify your email") ->
+            "Please verify your email address before registering."
+
+        // Email Dispatch Errors
+        lower.contains("brevo") || lower.contains("sender") || lower.contains("dispatch") || lower.contains("verification email") -> {
+            if (msg.length <= 160 && !msg.contains("{") && !msg.contains("}")) {
+                msg
+            } else {
+                "Unable to send verification email. Please try again shortly."
+            }
+        }
+
+        else -> {
+            if (msg.length <= 60 && !msg.contains("Exception") && !msg.contains("http", ignoreCase = true) && !msg.contains("{") && !msg.contains(":")) {
+                msg
+            } else {
+                "Operation failed. Please check your connection and try again."
+            }
         }
     }
 }

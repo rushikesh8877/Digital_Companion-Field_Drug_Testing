@@ -107,8 +107,7 @@ object OfficerDepartmentVerifier {
 
         return if (conflict != null) {
             GrantValidationResult.Denied(
-                "Officer ID '${candidateBadgeId.trim()}' is already registered in '$candidateDept' (held by ${conflict.name}). " +
-                    "Each officer must provide a unique ID in their department.",
+                "Officer ID '${candidateBadgeId.trim()}' is already registered in this department.",
             )
         } else {
             GrantValidationResult.Granted()

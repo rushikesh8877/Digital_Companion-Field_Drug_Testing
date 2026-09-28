@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
         val repository = RealTestRecordRepository(applicationContext)
         val authManager = com.sih.drugtestclassifier.auth.FirebaseAuthManager.getInstance(applicationContext)
         val syncManager = com.sih.drugtestclassifier.sync.FirebaseSyncManager.getInstance(applicationContext)
+        com.sih.drugtestclassifier.auth.EmailOtpService.getInstance(applicationContext)
 
         setContent {
             val viewModel: DemoTestViewModel = viewModel(

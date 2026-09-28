@@ -4,46 +4,44 @@ package com.sih.drugtestclassifier.auth
  * Configuration for the Real Email OTP Verification Pipeline.
  *
  * Supported delivery mechanisms:
- *  1. Firebase Firestore Trigger Email Extension (Automatic if Firebase extension is installed):
+ *  1. Brevo (Sendinblue) Direct Transactional Email API (HTTP REST):
+ *     Set [BREVO_API_KEY] and [BREVO_SENDER_EMAIL].
+ *
+ *  2. Custom Webhook / Gateway: Set [CUSTOM_WEBHOOK_URL].
+ *
+ *  3. Firebase Firestore Trigger Email Extension (Fallback if configured):
  *     Writes directly to the 'mail' Firestore collection with recipient, HTML template, and OTP.
- *
- *  2. Direct Transactional Email API (HTTP REST):
- *     - Brevo (Sendinblue) REST API: Set [BREVO_API_KEY] and [BREVO_SENDER_EMAIL].
- *     - Resend REST API: Set [RESEND_API_KEY] and [RESEND_SENDER_EMAIL].
- *     - Custom Webhook / SMTP Gateway: Set [CUSTOM_WEBHOOK_URL].
- *
- * When an API key is configured, [EmailOtpService] sends HTTP POST requests directly
- * to the transactional email provider in addition to logging the dispatch in Firestore.
  */
 object EmailOtpConfig {
 
     /**
-     * Brevo (Sendinblue) API Key.
-     * Obtain from: https://app.brevo.com/settings/keys/api
-     * Leave blank if using Resend, Firebase Trigger Email extension or custom webhook.
+     * Gmail sender email address configured with an App Password.
      */
-    var BREVO_API_KEY: String = "xsmtpsib-a296235494dd40578ff78bcc157493fcee0c7db6ca4c908ddacff663a4ef7cad-p9FNduy8CXnhRc04"
+    var GMAIL_SENDER_EMAIL: String = "hckr7887@gmail.com"
+
+    /**
+     * Google 16-character App Password (e.g. "szmv xtsp gexq zqgc").
+     * Generated from Google Account -> Security -> 2-Step Verification -> App Passwords.
+     */
+    var GMAIL_APP_PASSWORD: String = "szmv xtsp gexq zqgc"
+
+    /**
+     * Brevo (Sendinblue) API Key (Fallback).
+     * Obtain from: https://app.brevo.com/settings/keys/api
+     * NOTE: Must be an API Key (starts with "xkeysib-..."), NOT an SMTP key ("xsmtpsib-...").
+     */
+    var BREVO_API_KEY: String = "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"
 
     /**
      * Verified sender email configured in your Brevo account.
+     * Must be verified in Brevo (e.g. your Brevo account email).
      */
-    var BREVO_SENDER_EMAIL: String = "narcotics-companion@gov.in"
+    var BREVO_SENDER_EMAIL: String = "hckr7887@gmail.com"
 
     /**
      * Sender display name.
      */
     var SENDER_NAME: String = "Narcotics Enforcement - Digital Field Companion"
-
-    /**
-     * Resend API Key.
-     * Obtain from: https://resend.com/api-keys
-     */
-    var RESEND_API_KEY: String = "re_apJUyvD1_8SPS3qqB2CddS1rYqRHMcPVQ"
-
-    /**
-     * Verified sender email for Resend (e.g. "onboarding@resend.dev").
-     */
-    var RESEND_SENDER_EMAIL: String = "onboarding@resend.dev"
 
     /**
      * Optional custom HTTP Webhook endpoint that accepts JSON { "to": "...", "otp": "...", "subject": "..." }.
